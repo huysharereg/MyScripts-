@@ -1,4 +1,4 @@
--- ✅ Aimbot + AutoShoot + ESP Enemy Only + GUI with Checkboxes by ChatGPT
+-- ✅ Aimbot khi nhấn chuột trái + AutoShoot + ESP Enemy Only + GUI Checkboxes by ChatGPT
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -115,11 +115,27 @@ local function MakeCheckbox(label, yPos, settingName)
     end)
 end
 
-MakeCheckbox("Aimbot", 10, "AimbotEnabled")
+MakeCheckbox("Aimbot (When Shoot)", 10, "AimbotEnabled")
 MakeCheckbox("AutoShoot", 40, "AutoShoot")
 MakeCheckbox("ESP (Enemy Only)", 70, "ESPEnabled")
 MakeCheckbox("Show FOV", 100, "AimFOVEnabled")
 MakeCheckbox("Team Check", 130, "TeamCheck")
+
+-- 🖱 Track chuột trái
+local MouseHeld = false
+UIS.InputBegan:Connect(function(input, processed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        MouseHeld = true
+    elseif input.KeyCode == Enum.KeyCode.Insert and not processed then
+        Settings.GUIVisible = not Settings.GUIVisible
+        Frame.Visible = Settings.GUIVisible
+    end
+end)
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        MouseHeld = false
+    end
+end)
 
 -- 🔄 Main loop
 RunService.RenderStepped:Connect(function()
@@ -128,7 +144,7 @@ RunService.RenderStepped:Connect(function()
     circle.Radius = Settings.FOV_RADIUS
     UpdateESP()
 
-    if Settings.AimbotEnabled then
+    if Settings.AimbotEnabled and MouseHeld then
         local target = GetClosestEnemy()
         if target then
             MoveMouseToTarget(target)
@@ -136,13 +152,5 @@ RunService.RenderStepped:Connect(function()
                 mouse1click()
             end
         end
-    end
-end)
-
--- 🛑 Toggle GUI bằng INSERT
-UIS.InputBegan:Connect(function(input, processed)
-    if input.KeyCode == Enum.KeyCode.Insert and not processed then
-        Settings.GUIVisible = not Settings.GUIVisible
-        Frame.Visible = Settings.GUIVisible
     end
 end)
