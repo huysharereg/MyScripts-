@@ -1,226 +1,275 @@
--- Stylish Silent Aim + ESP + UI Panel for GunFight Arena
-
--- Services
+-- UI
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UIS = game:GetService("UserInputService")
-local Camera = workspace.CurrentCamera
-local LP = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Sea = "Unknown"
 
--- Settings
-local Settings = {
-    FOV = 200,
-    SilentAim = true,
-    ESP = true,
-    AutoShoot = true
-}
-
--- UI -------------------------------------------------------------
-local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "StylishSilentMod"
-
-local panel = Instance.new("Frame", gui)
-panel.Size = UDim2.new(0, 250, 0, 260)
-panel.Position = UDim2.new(0, 15, 0.3, 0)
-panel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-panel.BorderSizePixel = 0
-panel.ClipsDescendants = true
-
-local Corner = Instance.new("UICorner", panel)
-Corner.CornerRadius = UDim.new(0, 10)
-
-local title = Instance.new("TextLabel", panel)
-title.Size = UDim2.new(1, 0, 0, 32)
-title.Position = UDim2.new(0, 0, 0, 0)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamSemibold
-title.TextSize = 18
-title.TextColor3 = Color3.fromRGB(0, 255, 255)
-title.Text = "🔫 GunFight Silent UI"
-
--- Stylish toggles
-local function mkToggle(label, property, posY)
-    local cb = Instance.new("TextButton", panel)
-    cb.Size = UDim2.new(0, 24, 0, 24)
-    cb.Position = UDim2.new(0, 12, 0, 40 + posY * 40)
-    cb.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    cb.TextColor3 = Color3.fromRGB(200, 200, 200)
-    cb.Font = Enum.Font.SourceSans
-    cb.TextSize = 18
-    cb.Text = Settings[property] and "✔" or ""
-    local lbl = Instance.new("TextLabel", panel)
-    lbl.Position = UDim2.new(0, 50, 0, 40 + posY * 40)
-    lbl.Size = UDim2.new(0, 160, 0, 24)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.SourceSans
-    lbl.TextSize = 18
-    lbl.TextColor3 = Color3.new(1, 1, 1)
-    lbl.Text = label
-    cb.MouseButton1Click:Connect(function()
-        Settings[property] = not Settings[property]
-        cb.Text = Settings[property] and "✔" or ""
-    end)
+-- Tự nhận diện Sea đang ở
+if game.PlaceId == 2753915549 then
+    Sea = "Sea 1"
+elseif game.PlaceId == 4442272183 then
+    Sea = "Sea 2"
+elseif game.PlaceId == 7449423635 then
+    Sea = "Sea 3"
 end
 
-mkToggle("Silent Aim", "SilentAim", 0)
-mkToggle("ESP Box/Line", "ESP", 1)
-mkToggle("AutoShoot", "AutoShoot", 2)
+-- Tải thư viện GUI Orion
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jensonhirst/Orion/main/source"))()
 
--- FOV slider + label
-local fovLabel = Instance.new("TextLabel", panel)
-fovLabel.Position = UDim2.new(0, 12, 0, 160)
-fovLabel.Size = UDim2.new(0, 180, 0, 24)
-fovLabel.BackgroundTransparency = 1
-fovLabel.Font = Enum.Font.SourceSans
-fovLabel.TextSize = 16
-fovLabel.TextColor3 = Color3.new(1, 1, 0)
-fovLabel.Text = "FOV: " .. Settings.FOV
+local Window = OrionLib:MakeWindow({
+    Name = "🌊 BloxFruit Pro Hub | Sea: "..Sea,
+    HidePremium = false,
+    SaveConfig = false,
+    ConfigFolder = "BloxHub"
+})
 
-local sliderBg = Instance.new("Frame", panel)
-sliderBg.Position = UDim2.new(0, 12, 0, 190)
-sliderBg.Size = UDim2.new(0, 220, 0, 8)
-sliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-local slider = Instance.new("Frame", sliderBg)
-slider.Size = UDim2.new(Settings.FOV / 500, 0, 1, 0)
-slider.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-sliderBg.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        local function move(pt)
-            local x = math.clamp(pt.X - sliderBg.AbsolutePosition.X, 0, sliderBg.AbsoluteSize.X)
-            slider.Size = UDim2.new(x / sliderBg.AbsoluteSize.X, 0, 1, 0)
-            Settings.FOV = math.floor(x / sliderBg.AbsoluteSize.X * 500)
-            Settings.FOV = math.clamp(Settings.FOV, 50, 500)
-            fovLabel.Text = "FOV: " .. Settings.FOV
-        end
-        local moveConn, upConn
-        moveConn = UIS.InputChanged:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseMovement then move(i.Position) end
-        end)
-        upConn = UIS.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                moveConn:Disconnect(); upConn:Disconnect()
+-- Avatar + Tên người dùng
+local avatarTab = Window:MakeTab({Name = "Account", Icon = "", PremiumOnly = false})
+avatarTab:AddParagraph("User:", LocalPlayer.Name)
+avatarTab:AddLabel("Sea hiện tại: "..Sea)
+
+--auto farm
+_G.FarmMob = false
+_G.FarmBoss = false
+_G.AutoQuest = false
+
+local farmTab = Window:MakeTab({Name = "🌿 Auto Farm", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+
+farmTab:AddToggle({
+    Name = "✅ Auto Farm Mob",
+    Default = false,
+    Callback = function(Value) _G.FarmMob = Value end
+})
+
+farmTab:AddToggle({
+    Name = "👑 Auto Farm Boss",
+    Default = false,
+    Callback = function(Value) _G.FarmBoss = Value end
+})
+
+farmTab:AddToggle({
+    Name = "📝 Auto Quest",
+    Default = false,
+    Callback = function(Value) _G.AutoQuest = Value end
+})
+
+--auto ken/haki
+_G.AutoKen = false
+_G.AutoStat = false
+
+local miscTab = Window:MakeTab({Name = "🔧 Misc Features", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+
+miscTab:AddToggle({
+    Name = "⚔️ Auto Ken/Haki",
+    Default = false,
+    Callback = function(Value) _G.AutoKen = Value end
+})
+
+miscTab:AddToggle({
+    Name = "📊 Auto Stat (All vào Melee)",
+    Default = false,
+    Callback = function(Value) _G.AutoStat = Value end
+})
+
+miscTab:AddButton({
+    Name = "🔁 Server Hop",
+    Callback = function()
+        local HttpService = game:GetService("HttpService")
+        local Servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100"))
+        for i,v in pairs(Servers.data) do
+            if v.playing < v.maxPlayers then
+                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, v.id)
+                break
             end
-        end)
+        end
+    end
+})
+
+--teleprot
+local teleportTab = Window:MakeTab({Name = "📍 Teleport", Icon = "", PremiumOnly = false})
+
+teleportTab:AddButton({
+    Name = "🚢 Đến Sea 1",
+    Callback = function() game:GetService("TeleportService"):Teleport(2753915549) end
+})
+
+teleportTab:AddButton({
+    Name = "⚓ Đến Sea 2",
+    Callback = function() game:GetService("TeleportService"):Teleport(4442272183) end
+})
+
+teleportTab:AddButton({
+    Name = "🌌 Đến Sea 3",
+    Callback = function() game:GetService("TeleportService"):Teleport(7449423635) end
+})
+
+--farm boss
+local TweenService = game:GetService("TweenService")
+local function tweenTo(pos)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local tween = TweenService:Create(char.HumanoidRootPart, TweenInfo.new(1.5, Enum.EasingStyle.Linear), {CFrame = pos})
+        tween:Play()
+        tween.Completed:Wait()
+    end
+end
+
+-- Danh sách Boss (cần cập nhật thêm nếu game update)
+local BossList = {
+    ["Sea 1"] = {
+        {Name="The Gorilla King", CFrame=CFrame.new(-1599, 12, 160)},
+        {Name="Buggy", CFrame=CFrame.new(-1140, 14, 4322)},
+    },
+    ["Sea 2"] = {
+        {Name="Don Swan", CFrame=CFrame.new(2284, 15, 705)},
+    },
+    ["Sea 3"] = {
+        {Name="Kaidou Clone", CFrame=CFrame.new(-12548, 401, -7583)},
+    }
+}
+
+-- Hàm kiểm tra Boss có tồn tại
+local function getAvailableBoss()
+    for _, boss in ipairs(BossList[Sea] or {}) do
+        local found = workspace:FindFirstChild(boss.Name)
+        if found and found:FindFirstChild("Humanoid") and found.Humanoid.Health > 0 then
+            return boss
+        end
+    end
+    return nil
+end
+
+--tìm boss
+task.spawn(function()
+    while task.wait(1) do
+        if _G.FarmBoss then
+            local boss = getAvailableBoss()
+            if boss then
+                tweenTo(boss.CFrame + Vector3.new(0,5,0))
+                repeat
+                    task.wait(0.2)
+                    local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                    if tool then
+                        tool:Activate()
+                    end
+                until not workspace:FindFirstChild(boss.Name) or workspace[boss.Name].Humanoid.Health <= 0 or not _G.FarmBoss
+            end
+        end
     end
 end)
 
--- Minimize icon
-local min = Instance.new("TextButton", panel)
-min.Size = UDim2.new(0, 24, 0, 24)
-min.Position = UDim2.new(1, -36, 0, 4)
-min.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-min.TextSize = 18
-min.Text = "─"
-min.Font = Enum.Font.SourceSans
-min.TextColor3 = Color3.new(1, 1, 1)
-
-local icon = Instance.new("TextButton", gui)
-icon.Size = UDim2.new(0, 32, 0, 32)
-icon.Position = UDim2.new(0, 15, 0.3, 0)
-icon.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-icon.Text = "🔫"
-icon.TextSize = 18
-icon.Font = Enum.Font.GothamSemibold
-icon.TextColor3 = Color3.new(1, 1, 1)
-icon.Visible = false
-
-min.MouseButton1Click:Connect(function()
-    panel.Visible = false
-    icon.Visible = true
-end)
-icon.MouseButton1Click:Connect(function()
-    panel.Visible = true
-    icon.Visible = false
-end)
-
--- Drawings ------------------------------------------------------
-local circle = Drawing.new("Circle")
-circle.Color, circle.Thickness, circle.Transparency, circle.Filled = Color3.fromRGB(255,255,0), 2, 0.4, false
-local espLines = {}
-
--- Utility functions ------------------------------------------------
-local function isEnemy(p)
-    return p ~= LP and p.Team ~= LP.Team and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character:FindFirstChild("Head")
-end
-
-local function getClosest()
-    local closest, minD = nil, Settings.FOV
-    for _, p in ipairs(Players:GetPlayers()) do
-        if isEnemy(p) then
-            local head = p.Character.Head
-            local pos, on = Camera:WorldToViewportPoint(head.Position)
-            if on then
-                local d = (Vector2.new(pos.X,pos.Y) - UIS:GetMouseLocation()).Magnitude
-                if d < minD then
-                    minD, closest = d, head
-                end
+--auto farm mob
+function getClosestMob()
+    local closest, dist = nil, math.huge
+    for _, mob in pairs(workspace.Enemies:GetChildren()) do
+        if mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
+            local d = (LocalPlayer.Character.HumanoidRootPart.Position - mob.HumanoidRootPart.Position).Magnitude
+            if d < dist then
+                closest = mob
+                dist = d
             end
         end
     end
     return closest
 end
 
--- Silent Aim Hook ------------------------------------------------
-hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local args = {...}
-    local method = getnamecallmethod()
-    if method == "Fire" and tostring(self) == "Sync" and Settings.SilentAim then
-        local targetHead = getClosest()
-        if targetHead then
-            args[2] = targetHead.CFrame
-        end
-        return self.Fire(self, unpack(args))
-    end
-    return self[method](self, ...)
-end))
-
--- RenderStepped --------------------------------------------------
-RunService.RenderStepped:Connect(function()
-    -- FOV circle
-    circle.Position = UIS:GetMouseLocation()
-    circle.Radius = Settings.FOV
-    circle.Visible = Settings.SilentAim
-
-    -- ESP Box/Line/Name/Distance
-    for _, p in ipairs(Players:GetPlayers()) do
-        local head = p.Character and p.Character:FindFirstChild("Head")
-        if head and isEnemy(p) and Settings.ESP then
-            local pos, on = Camera:WorldToViewportPoint(head.Position)
-            if on then
-                local size = 2000 / head.Position.Z
-                -- Create drawing objects if needed
-                if not espLines[head] then
-                    local box = Drawing.new("Square")
-                    box.Color, box.Thickness, box.Filled = Color3.new(1,0,0), 2, false
-                    local line = Drawing.new("Line")
-                    line.Color, line.Thickness = Color3.new(1,1,1), 1
-                    local txt = Drawing.new("Text")
-                    txt.Color, txt.Size, txt.Center = Color3.new(1,1,1), 16, true
-                    espLines[head] = {box=box,line=line,txt=txt}
-                end
-                local obj = espLines[head]
-                local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-                update = Vector2.new(pos.X,pos.Y)
-                obj.box.Position = Vector2.new(pos.X-size/2,pos.Y-size/2)
-                obj.box.Size = size
-                obj.box.Visible = true
-                obj.line.From = center
-                obj.line.To = update
-                obj.line.Visible = true
-                obj.txt.Position = update + Vector2.new(0, -size/2 - 10)
-                obj.txt.Text = p.Name.." ["..math.floor((head.Position - LP.Character.HumanoidRootPart.Position).Magnitude).."m]"
-                obj.txt.Visible = true
-            elseif espLines[head] then
-                espLines[head].box:Remove()
-                espLines[head].line:Remove()
-                espLines[head].txt:Remove()
-                espLines[head] = nil
+task.spawn(function()
+    while task.wait(0.5) do
+        if _G.FarmMob then
+            local mob = getClosestMob()
+            if mob then
+                tweenTo(mob.HumanoidRootPart.CFrame + Vector3.new(0, 5, 0))
+                repeat
+                    task.wait(0.1)
+                    local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                    if tool then tool:Activate() end
+                until not mob or mob.Humanoid.Health <= 0 or not _G.FarmMob
             end
-        elseif head and espLines[head] then
-            espLines[head].box:Remove()
-            espLines[head].line:Remove()
-            espLines[head].txt:Remove()
-            espLines[head] = nil
         end
     end
 end)
+
+--auto nhiệm vụ
+local QuestTable = {
+    ["Bandit"] = {MinLevel = 10, QuestName = "BanditQuest1", NpcName = "QuestGiver", Pos = CFrame.new(1060, 16, 1548)},
+    ["Monkey"] = {MinLevel = 15, QuestName = "JungleQuest", NpcName = "QuestGiver", Pos = CFrame.new(-1600, 12, 161)},
+    -- Thêm các mob khác tại đây
+}
+
+_G.CustomMob = nil -- Nếu chọn mob cụ thể
+
+function getBestQuest()
+    local level = LocalPlayer.Data.Level.Value
+    for mobName, info in pairs(QuestTable) do
+        if level >= info.MinLevel then
+            if _G.CustomMob and _G.CustomMob ~= mobName then continue end
+            return mobName, info
+        end
+    end
+    return nil, nil
+end
+
+task.spawn(function()
+    while task.wait(2) do
+        if _G.AutoQuest then
+            local mobName, data = getBestQuest()
+            if data and not LocalPlayer.PlayerGui.Main.Quest.Visible then
+                tweenTo(data.Pos + Vector3.new(0,5,0))
+                wait(1.2)
+                local npc = workspace:FindFirstChild(data.NpcName)
+                if npc then
+                    local args = {
+                        [1] = data.QuestName,
+                        [2] = 1
+                    }
+                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StartQuest", unpack(args))
+                end
+            end
+        end
+    end
+end)
+
+--auto start
+local AutoStatPreset = {
+    Melee = true,
+    Defense = false,
+    Sword = false,
+    Gun = false,
+    BloxFruit = false
+}
+
+task.spawn(function()
+    while task.wait(3) do
+        if _G.AutoStat then
+            local points = LocalPlayer.Data.Points.Value
+            if points > 0 then
+                for stat, enabled in pairs(AutoStatPreset) do
+                    if enabled then
+                        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AddPoint", stat, points)
+                        break
+                    end
+                end
+            end
+        end
+    end
+end)
+-- auto bật haki khi combat
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutoKen then
+            if LocalPlayer.Character:FindFirstChild("HasBuso") == nil then
+                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+            end
+        end
+    end
+end)
+--gui chọn mob
+farmTab:AddTextbox({
+    Name = "🎯 Tên mob muốn farm (tuỳ chọn)",
+    Default = "",
+    TextDisappear = false,
+    Callback = function(Value)
+        _G.CustomMob = Value
+    end
+})
+--
