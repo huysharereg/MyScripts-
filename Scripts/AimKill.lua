@@ -1,113 +1,137 @@
--- ✅ FULL SCRIPT AIMBOT + ESP + UI TOGGLE
+-- ✅ Script Aimbot + ESP + UI toggle for Gun Fight Arena by HuyMod
+
+-- Services
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
-local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local LocalTeam = LocalPlayer.Team
 
-local FOV_RADIUS = 120
-local AimbotEnabled = false
-local ESPEnabled = false
-local AutoShoot = false
-local AimPart = "Head"
+-- Settings
+local Settings = {
+    FOV = 120,
+    Aimbot = false,
+    ESP = false,
+    AutoShoot = false,
+    AimPart = "Head"
+}
 
--- Vẽ FOV
-local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 2
-fovCircle.Radius = FOV_RADIUS
-fovCircle.Color = Color3.fromRGB(0, 255, 0)
-fovCircle.Filled = false
-fovCircle.Transparency = 0.5
-fovCircle.Visible = true
+-- FOV Circle
+local circle = Drawing.new("Circle")
+circle.Thickness = 2
+circle.Color = Color3.fromRGB(0,255,0)
+circle.Filled = false
+circle.Transparency = 0.5
+circle.Visible = true
+circle.Radius = Settings.FOV
 
--- AimLine
-local aimLine = Drawing.new("Line")
-aimLine.Thickness = 1
-aimLine.Color = Color3.fromRGB(255, 0, 0)
-aimLine.Transparency = 0.7
-aimLine.Visible = false
+-- Aim Line
+local line = Drawing.new("Line")
+line.Thickness = 1
+line.Color = Color3.fromRGB(255,0,0)
+line.Transparency = 0.7
+line.Visible = false
 
--- UI Toggle
+-- UI
 local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.Name = "GunFightUI"
+
 local frame = Instance.new("Frame", gui)
 frame.Position = UDim2.new(0, 20, 0.4, 0)
-frame.Size = UDim2.new(0, 200, 0, 150)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.Draggable = true
+frame.Size = UDim2.new(0, 180, 0, 150)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.BorderSizePixel = 0
 frame.Active = true
+frame.Draggable = true
 
-local function makeBtn(text, y, callback)
-    local b = Instance.new("TextButton", frame)
-    b.Size = UDim2.new(1, -20, 0, 30)
-    b.Position = UDim2.new(0, 10, 0, y)
-    b.Text = text
-    b.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Font = Enum.Font.SourceSans
-    b.TextSize = 18
-    b.MouseButton1Click:Connect(callback)
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "🎯 GunFight Arena Hack"
+title.TextColor3 = Color3.fromRGB(0,255,255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+
+function makeBtn(text, y, toggleVar)
+    local btn = Instance.new("TextButton", frame)
+    btn.Size = UDim2.new(1, -20, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 16
+    btn.Text = text .. ": OFF"
+    btn.MouseButton1Click:Connect(function()
+        Settings[toggleVar] = not Settings[toggleVar]
+        btn.Text = text .. ": " .. (Settings[toggleVar] and "ON" or "OFF")
+    end)
 end
 
-makeBtn("🎯 Toggle Aimbot", 10, function()
-    AimbotEnabled = not AimbotEnabled
-end)
-makeBtn("👁 Toggle ESP", 50, function()
-    ESPEnabled = not ESPEnabled
-end)
-makeBtn("🔫 Toggle AutoShoot", 90, function()
-    AutoShoot = not AutoShoot
-end)
+makeBtn("Toggle Aimbot", 40, "Aimbot")
+makeBtn("Toggle ESP", 75, "ESP")
+makeBtn("Toggle AutoShoot", 110, "AutoShoot")
 
--- Tìm địch gần chuột nhất trong FOV
-function GetClosestEnemy()
-    local closest = nil
-    local shortest = FOV_RADIUS
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= LocalPlayer and v.Team ~= LocalPlayer.Team and v.Character and v.Character:FindFirstChild(AimPart) then
-            local pos, visible = Camera:WorldToViewportPoint(v.Character[AimPart].Position)
-            if visible then
-                local dist = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude
-                if dist < shortest then
-                    closest = v
-                    shortest = dist
-                end
+-- Get enemy heads
+function GetEnemies()
+    local targets = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Part") and obj.Name == Settings.AimPart then
+            local model = obj:FindFirstAncestorOfClass("Model")
+            local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+            local teamVal = model and model:FindFirstChild("Team")
+            if humanoid and humanoid.Health > 0 and teamVal and teamVal.Value ~= LocalTeam then
+                table.insert(targets, obj)
+            end
+        end
+    end
+    return targets
+end
+
+-- Get closest to mouse
+function GetClosest()
+    local closest, minDist = nil, Settings.FOV
+    for _, head in pairs(GetEnemies()) do
+        local pos, visible = Camera:WorldToViewportPoint(head.Position)
+        if visible then
+            local dist = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude
+            if dist < minDist then
+                closest = head
+                minDist = dist
             end
         end
     end
     return closest
 end
 
--- Vẽ ESP
-function DrawESP(player)
-    if not player.Character or not player.Character:FindFirstChild("Head") then return end
-    if player.Character.Head:FindFirstChild("ESP") then return end
+-- Add ESP
+function AddESP(part)
+    if not part or part:FindFirstChild("ESP") then return end
+    local gui = Instance.new("BillboardGui", part)
+    gui.Name = "ESP"
+    gui.Size = UDim2.new(0, 100, 0, 40)
+    gui.AlwaysOnTop = true
 
-    local bb = Instance.new("BillboardGui", player.Character.Head)
-    bb.Name = "ESP"
-    bb.Size = UDim2.new(0, 100, 0, 40)
-    bb.AlwaysOnTop = true
-
-    local txt = Instance.new("TextLabel", bb)
-    txt.Size = UDim2.new(1, 0, 1, 0)
-    txt.BackgroundTransparency = 1
-    txt.TextColor3 = Color3.new(1, 0, 0)
-    txt.TextScaled = true
-    txt.Text = player.Name
+    local label = Instance.new("TextLabel", gui)
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = part.Parent.Name
+    label.TextColor3 = Color3.new(1, 0, 0)
+    label.TextScaled = true
 end
 
--- Vòng lặp render
+-- Main loop
 RunService.RenderStepped:Connect(function()
-    fovCircle.Position = UIS:GetMouseLocation()
+    circle.Position = UIS:GetMouseLocation()
+    circle.Radius = Settings.FOV
 
     -- ESP
-    if ESPEnabled then
-        for _, plr in pairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team then
-                DrawESP(plr)
-            end
+    if Settings.ESP then
+        for _, head in pairs(GetEnemies()) do
+            AddESP(head)
         end
     else
+        -- Remove all ESP
         for _, plr in pairs(Players:GetPlayers()) do
             if plr.Character and plr.Character:FindFirstChild("Head") then
                 local esp = plr.Character.Head:FindFirstChild("ESP")
@@ -116,24 +140,16 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Aimbot + Shoot
-    if AimbotEnabled then
-        local enemy = GetClosestEnemy()
-        if enemy and enemy.Character and enemy.Character:FindFirstChild(AimPart) then
-            local target = enemy.Character[AimPart]
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
-            aimLine.Visible = true
-            aimLine.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            local screenPos = Camera:WorldToViewportPoint(target.Position)
-            aimLine.To = Vector2.new(screenPos.X, screenPos.Y)
-
-            if AutoShoot then
-                mouse1click()
-            end
-        else
-            aimLine.Visible = false
-        end
+    -- Aimbot
+    local target = GetClosest()
+    if Settings.Aimbot and target then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+        local screenPos = Camera:WorldToViewportPoint(target.Position)
+        line.Visible = true
+        line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        line.To = Vector2.new(screenPos.X, screenPos.Y)
+        if Settings.AutoShoot then mouse1click() end
     else
-        aimLine.Visible = false
+        line.Visible = false
     end
 end)
