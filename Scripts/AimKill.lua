@@ -1,155 +1,136 @@
--- ✅ Script Aimbot + ESP + UI toggle for Gun Fight Arena by HuyMod
+-- Gun Fight Arena Script Hook with Full UI, Multi-ESP, AimKill, AutoKill
 
 -- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
-local LocalTeam = LocalPlayer.Team
+local LP = Players.LocalPlayer
 
--- Settings
+-- Settings table
 local Settings = {
     FOV = 120,
     Aimbot = false,
     ESP = false,
-    AutoShoot = false,
-    AimPart = "Head"
+    AutoKill = false
 }
 
--- FOV Circle
-local circle = Drawing.new("Circle")
-circle.Thickness = 2
-circle.Color = Color3.fromRGB(0,255,0)
-circle.Filled = false
-circle.Transparency = 0.5
-circle.Visible = true
-circle.Radius = Settings.FOV
+-- GUI
+local GUI = Instance.new("ScreenGui", game.CoreGui)
+local Frame = Instance.new("Frame", GUI)
+Frame.Position = UDim2.new(0, 20, 0.4, 0)
+Frame.Size = UDim2.new(0, 180, 0, 170)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.Active = true
+Frame.Draggable = true
 
--- Aim Line
-local line = Drawing.new("Line")
-line.Thickness = 1
-line.Color = Color3.fromRGB(255,0,0)
-line.Transparency = 0.7
-line.Visible = false
-
--- UI
-local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "GunFightUI"
-
-local frame = Instance.new("Frame", gui)
-frame.Position = UDim2.new(0, 20, 0.4, 0)
-frame.Size = UDim2.new(0, 180, 0, 150)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundTransparency = 1
-title.Text = "🎯 GunFight Arena Hack"
-title.TextColor3 = Color3.fromRGB(0,255,255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 14
-
-function makeBtn(text, y, toggleVar)
-    local btn = Instance.new("TextButton", frame)
-    btn.Size = UDim2.new(1, -20, 0, 30)
+local function MakeToggle(name, y, setting)
+    local btn = Instance.new("TextButton", Frame)
+    btn.Size = UDim2.new(1, -20, 0, 40)
     btn.Position = UDim2.new(0, 10, 0, y)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
     btn.TextColor3 = Color3.new(1,1,1)
-    btn.Font = Enum.Font.SourceSans
-    btn.TextSize = 16
-    btn.Text = text .. ": OFF"
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.Text = name .. ": OFF"
     btn.MouseButton1Click:Connect(function()
-        Settings[toggleVar] = not Settings[toggleVar]
-        btn.Text = text .. ": " .. (Settings[toggleVar] and "ON" or "OFF")
+        Settings[setting] = not Settings[setting]
+        btn.Text = name .. ": " .. (Settings[setting] and "ON" or "OFF")
     end)
 end
 
-makeBtn("Toggle Aimbot", 40, "Aimbot")
-makeBtn("Toggle ESP", 75, "ESP")
-makeBtn("Toggle AutoShoot", 110, "AutoShoot")
+MakeToggle("Aimbot", 10, "Aimbot")
+MakeToggle("ESP", 60, "ESP")
+MakeToggle("AutoKill", 110, "AutoKill")
 
--- Get enemy heads
-function GetEnemies()
-    local targets = {}
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Part") and obj.Name == Settings.AimPart then
-            local model = obj:FindFirstAncestorOfClass("Model")
-            local humanoid = model and model:FindFirstChildOfClass("Humanoid")
-            local teamVal = model and model:FindFirstChild("Team")
-            if humanoid and humanoid.Health > 0 and teamVal and teamVal.Value ~= LocalTeam then
-                table.insert(targets, obj)
-            end
-        end
-    end
-    return targets
+-- ESP storage
+local allESP = {}
+
+local function CreateESP(part)
+    if allESP[part] then return end
+    local box = Drawing.new("Square")
+    box.Thickness = 1
+    box.Color = Color3.new(1, 0, 0)
+    box.Filled = false
+    box.Visible = true
+    allESP[part] = box
 end
 
--- Get closest to mouse
-function GetClosest()
+local function UpdateESP()
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Part") and v.Name == "Head" and v:IsDescendantOf(workspace) then
+            CreateESP(v)
+        end
+    end
+end
+
+-- Hook RemoteEvent target
+local HookedTargets = {}
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local old = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if method == "FireServer" and tostring(self):lower():find("shoot") then
+        if typeof(args[1]) == "Vector3" then
+            table.insert(HookedTargets, args[1])
+        end
+    end
+    return old(self, ...)
+end)
+setreadonly(mt, true)
+
+-- Aimbot functions
+local function GetClosestTarget()
     local closest, minDist = nil, Settings.FOV
-    for _, head in pairs(GetEnemies()) do
-        local pos, visible = Camera:WorldToViewportPoint(head.Position)
-        if visible then
+    for _, vec in ipairs(HookedTargets) do
+        local pos, onScreen = Camera:WorldToViewportPoint(vec)
+        if onScreen then
             local dist = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude
             if dist < minDist then
-                closest = head
                 minDist = dist
+                closest = vec
             end
         end
     end
     return closest
 end
 
--- Add ESP
-function AddESP(part)
-    if not part or part:FindFirstChild("ESP") then return end
-    local gui = Instance.new("BillboardGui", part)
-    gui.Name = "ESP"
-    gui.Size = UDim2.new(0, 100, 0, 40)
-    gui.AlwaysOnTop = true
+-- FOV circle
+local circle = Drawing.new("Circle")
+circle.Color = Color3.new(0, 1, 0)
+circle.Thickness = 2
+circle.Radius = Settings.FOV
+circle.Filled = false
 
-    local label = Instance.new("TextLabel", gui)
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = part.Parent.Name
-    label.TextColor3 = Color3.new(1, 0, 0)
-    label.TextScaled = true
-end
-
--- Main loop
+-- Render loop
 RunService.RenderStepped:Connect(function()
     circle.Position = UIS:GetMouseLocation()
     circle.Radius = Settings.FOV
+    circle.Visible = Settings.Aimbot
 
-    -- ESP
-    if Settings.ESP then
-        for _, head in pairs(GetEnemies()) do
-            AddESP(head)
-        end
-    else
-        -- Remove all ESP
-        for _, plr in pairs(Players:GetPlayers()) do
-            if plr.Character and plr.Character:FindFirstChild("Head") then
-                local esp = plr.Character.Head:FindFirstChild("ESP")
-                if esp then esp:Destroy() end
+    UpdateESP()
+
+    for part, box in pairs(allESP) do
+        if part and part:IsDescendantOf(workspace) and Settings.ESP then
+            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local size = math.clamp(5000 / (part.Position - Camera.CFrame.Position).Magnitude, 20, 80)
+                box.Position = Vector2.new(pos.X - size/2, pos.Y - size/2)
+                box.Size = Vector2.new(size, size)
+                box.Visible = true
+            else
+                box.Visible = false
             end
+        else
+            box.Visible = false
         end
     end
 
-    -- Aimbot
-    local target = GetClosest()
-    if Settings.Aimbot and target then
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
-        local screenPos = Camera:WorldToViewportPoint(target.Position)
-        line.Visible = true
-        line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-        line.To = Vector2.new(screenPos.X, screenPos.Y)
-        if Settings.AutoShoot then mouse1click() end
-    else
-        line.Visible = false
+    local target = GetClosestTarget()
+    if target and Settings.Aimbot then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, target)
+        if Settings.AutoKill then mouse1click() end
     end
 end)
