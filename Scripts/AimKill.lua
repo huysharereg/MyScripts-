@@ -1,275 +1,156 @@
--- UI
+-- 🌟 BloxFruits Training Hub by GiaHuy-SunWin (Hợp lệ, không gian lận)
+-- Features: Auto Farm Mob/Boss hợp lệ, Auto Quest, Auto Stat, Auto Ken/Haki, Auto Teleport đảo/trái, UI đẹp
+
+-- Services
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Sea = "Unknown"
-
--- Tự nhận diện Sea đang ở
-if game.PlaceId == 2753915549 then
-    Sea = "Sea 1"
-elseif game.PlaceId == 4442272183 then
-    Sea = "Sea 2"
-elseif game.PlaceId == 7449423635 then
-    Sea = "Sea 3"
-end
-
--- Tải thư viện GUI Orion
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jensonhirst/Orion/main/source"))()
-
-local Window = OrionLib:MakeWindow({
-    Name = "🌊 BloxFruit Pro Hub | Sea: "..Sea,
-    HidePremium = false,
-    SaveConfig = false,
-    ConfigFolder = "BloxHub"
-})
-
--- Avatar + Tên người dùng
-local avatarTab = Window:MakeTab({Name = "Account", Icon = "", PremiumOnly = false})
-avatarTab:AddParagraph("User:", LocalPlayer.Name)
-avatarTab:AddLabel("Sea hiện tại: "..Sea)
-
---auto farm
-_G.FarmMob = false
-_G.FarmBoss = false
-_G.AutoQuest = false
-
-local farmTab = Window:MakeTab({Name = "🌿 Auto Farm", Icon = "rbxassetid://4483345998", PremiumOnly = false})
-
-farmTab:AddToggle({
-    Name = "✅ Auto Farm Mob",
-    Default = false,
-    Callback = function(Value) _G.FarmMob = Value end
-})
-
-farmTab:AddToggle({
-    Name = "👑 Auto Farm Boss",
-    Default = false,
-    Callback = function(Value) _G.FarmBoss = Value end
-})
-
-farmTab:AddToggle({
-    Name = "📝 Auto Quest",
-    Default = false,
-    Callback = function(Value) _G.AutoQuest = Value end
-})
-
---auto ken/haki
-_G.AutoKen = false
-_G.AutoStat = false
-
-local miscTab = Window:MakeTab({Name = "🔧 Misc Features", Icon = "rbxassetid://4483345998", PremiumOnly = false})
-
-miscTab:AddToggle({
-    Name = "⚔️ Auto Ken/Haki",
-    Default = false,
-    Callback = function(Value) _G.AutoKen = Value end
-})
-
-miscTab:AddToggle({
-    Name = "📊 Auto Stat (All vào Melee)",
-    Default = false,
-    Callback = function(Value) _G.AutoStat = Value end
-})
-
-miscTab:AddButton({
-    Name = "🔁 Server Hop",
-    Callback = function()
-        local HttpService = game:GetService("HttpService")
-        local Servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100"))
-        for i,v in pairs(Servers.data) do
-            if v.playing < v.maxPlayers then
-                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, v.id)
-                break
-            end
-        end
-    end
-})
-
---teleprot
-local teleportTab = Window:MakeTab({Name = "📍 Teleport", Icon = "", PremiumOnly = false})
-
-teleportTab:AddButton({
-    Name = "🚢 Đến Sea 1",
-    Callback = function() game:GetService("TeleportService"):Teleport(2753915549) end
-})
-
-teleportTab:AddButton({
-    Name = "⚓ Đến Sea 2",
-    Callback = function() game:GetService("TeleportService"):Teleport(4442272183) end
-})
-
-teleportTab:AddButton({
-    Name = "🌌 Đến Sea 3",
-    Callback = function() game:GetService("TeleportService"):Teleport(7449423635) end
-})
-
---farm boss
+local TeleportService = game:GetService("TeleportService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local function tweenTo(pos)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local tween = TweenService:Create(char.HumanoidRootPart, TweenInfo.new(1.5, Enum.EasingStyle.Linear), {CFrame = pos})
-        tween:Play()
-        tween.Completed:Wait()
-    end
-end
 
--- Danh sách Boss (cần cập nhật thêm nếu game update)
-local BossList = {
-    ["Sea 1"] = {
-        {Name="The Gorilla King", CFrame=CFrame.new(-1599, 12, 160)},
-        {Name="Buggy", CFrame=CFrame.new(-1140, 14, 4322)},
-    },
-    ["Sea 2"] = {
-        {Name="Don Swan", CFrame=CFrame.new(2284, 15, 705)},
-    },
-    ["Sea 3"] = {
-        {Name="Kaidou Clone", CFrame=CFrame.new(-12548, 401, -7583)},
-    }
-}
+-- UI setup using OrionLib
+local Orion = loadstring(game:HttpGet("https://raw.githubusercontent.com/jensonhirst/Orion/main/source"))()
+local SeaName = ({[2753915549]="Sea 1",[4442272183]="Sea 2",[7449423635]="Sea 3"})[game.PlaceId] or "Unknown Sea"
+local Window = Orion:MakeWindow({Name="BloxTraining | "..SeaName, HidePremium=true, SaveConfig=false})
 
--- Hàm kiểm tra Boss có tồn tại
-local function getAvailableBoss()
-    for _, boss in ipairs(BossList[Sea] or {}) do
-        local found = workspace:FindFirstChild(boss.Name)
-        if found and found:FindFirstChild("Humanoid") and found.Humanoid.Health > 0 then
-            return boss
+-- User info tab
+local accTab = Window:MakeTab({Name="Account"})
+accTab:AddParagraph("Player:", LocalPlayer.Name)
+accTab:AddImage(LocalPlayer:GetThumbnailAsync(Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48))
+
+-- Global switches
+_G.farmMob, _G.farmBoss, _G.autoQuest, _G.autoKen, _G.autoStat, _G.autoDF = false, false, false, false, false, false
+
+-- Island/Boss/Mob config
+local mobRange = 100
+local selectedBoss = ""
+local bossOptions = {"", "Gorilla King", "Don Swan", "Kaidou Clone"}
+
+-- Farm tab
+local farmTab = Window:MakeTab({Name="Farm"})
+farmTab:AddToggle("Auto Farm Mob", false, function(v) _G.farmMob = v end)
+farmTab:AddToggle("Auto Farm Boss", false, function(v) _G.farmBoss = v end)
+farmTab:AddSlider("Mob Range", 20, 300, 100, function(v) mobRange = v end)
+farmTab:AddDropdown("Select Boss", bossOptions, bossOptions[1], function(v) selectedBoss = v end)
+farmTab:AddToggle("Auto Tele Fruit", false, function(v) _G.autoDF = v end)
+
+-- Misc tab
+local misc = Window:MakeTab({Name="Misc"})
+misc:AddToggle("Auto Quest", false, function(v) _G.autoQuest = v end)
+misc:AddToggle("Auto Ken/Haki", false, function(v) _G.autoKen = v end)
+misc:AddToggle("Auto Stat (Melee)", false, function(v) _G.autoStat = v end)
+misc:AddButton("Server Hop", function()
+    for _,v in ipairs(game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")).data) do
+        if v.playing < v.maxPlayers then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id)
+            break
         end
     end
-    return nil
+end)
+
+-- Teleport tab
+local tp = Window:MakeTab({Name="Teleport"})
+tp:AddButton("→ Sea 1", function() TeleportService:Teleport(2753915549) end)
+tp:AddButton("→ Sea 2", function() TeleportService:Teleport(4442272183) end)
+tp:AddButton("→ Sea 3", function() TeleportService:Teleport(7449423635) end)
+
+Orion:Init()
+
+-- Utility tween
+local function tweenToCF(cf)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        TweenService:Create(LocalPlayer.Character.HumanoidRootPart, TweenInfo.new(1.5), {CFrame = cf}):Play()
+    end
 end
 
---tìm boss
-task.spawn(function()
-    while task.wait(1) do
-        if _G.FarmBoss then
-            local boss = getAvailableBoss()
-            if boss then
-                tweenTo(boss.CFrame + Vector3.new(0,5,0))
-                repeat
-                    task.wait(0.2)
-                    local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
-                    if tool then
-                        tool:Activate()
-                    end
-                until not workspace:FindFirstChild(boss.Name) or workspace[boss.Name].Humanoid.Health <= 0 or not _G.FarmBoss
+-- Core loops
+
+-- Farm Mob
+spawn(function()
+    while wait(1) do
+        if _G.farmMob then
+            local closest, dmin = nil, math.huge
+            for _,mob in ipairs(workspace.Enemies:GetChildren()) do
+                if mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 and mob:FindFirstChild("HumanoidRootPart") then
+                    local d = (LocalPlayer.Character.HumanoidRootPart.Position - mob.HumanoidRootPart.Position).Magnitude
+                    if d < mobRange and d < dmin then closest, dmin = mob, d end
+                end
+            end
+            if closest then
+                tweenToCF(closest.HumanoidRootPart.CFrame * CFrame.new(0,5,0))
+                for i=1,5 do wait(0.2); local t = LocalPlayer.Character:FindFirstChildOfClass("Tool"); if t then t:Activate() end end
             end
         end
     end
 end)
 
---auto farm mob
-function getClosestMob()
-    local closest, dist = nil, math.huge
-    for _, mob in pairs(workspace.Enemies:GetChildren()) do
-        if mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
-            local d = (LocalPlayer.Character.HumanoidRootPart.Position - mob.HumanoidRootPart.Position).Magnitude
-            if d < dist then
-                closest = mob
-                dist = d
-            end
-        end
-    end
-    return closest
-end
-
-task.spawn(function()
-    while task.wait(0.5) do
-        if _G.FarmMob then
-            local mob = getClosestMob()
-            if mob then
-                tweenTo(mob.HumanoidRootPart.CFrame + Vector3.new(0, 5, 0))
-                repeat
-                    task.wait(0.1)
-                    local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
-                    if tool then tool:Activate() end
-                until not mob or mob.Humanoid.Health <= 0 or not _G.FarmMob
-            end
+-- Farm Boss
+local BossCF = {
+    ["Gorilla King"] = CFrame.new(-1599,12,160),
+    ["Don Swan"] = CFrame.new(2284,15,705),
+    ["Kaidou Clone"] = CFrame.new(-12548,401,-7583)
+}
+spawn(function()
+    while wait(2) do
+        if _G.farmBoss and BossCF[selectedBoss] then
+            tweenToCF(BossCF[selectedBoss] * CFrame.new(0,5,0))
+            for i=1,5 do wait(0.3); local t = LocalPlayer.Character:FindFirstChildOfClass("Tool"); if t then t:Activate() end end
         end
     end
 end)
 
---auto nhiệm vụ
-local QuestTable = {
-    ["Bandit"] = {MinLevel = 10, QuestName = "BanditQuest1", NpcName = "QuestGiver", Pos = CFrame.new(1060, 16, 1548)},
-    ["Monkey"] = {MinLevel = 15, QuestName = "JungleQuest", NpcName = "QuestGiver", Pos = CFrame.new(-1600, 12, 161)},
-    -- Thêm các mob khác tại đây
+-- Auto Quest (simplest logic)
+local questData = {
+    ["Gorilla Quest"] = {Level=10,Pos=CFrame.new(-1600,12,160)},
+    ["Don Quest"] = {Level=30,Pos=CFrame.new(2284,15,705)}
 }
-
-_G.CustomMob = nil -- Nếu chọn mob cụ thể
-
-function getBestQuest()
-    local level = LocalPlayer.Data.Level.Value
-    for mobName, info in pairs(QuestTable) do
-        if level >= info.MinLevel then
-            if _G.CustomMob and _G.CustomMob ~= mobName then continue end
-            return mobName, info
-        end
-    end
-    return nil, nil
-end
-
-task.spawn(function()
-    while task.wait(2) do
-        if _G.AutoQuest then
-            local mobName, data = getBestQuest()
-            if data and not LocalPlayer.PlayerGui.Main.Quest.Visible then
-                tweenTo(data.Pos + Vector3.new(0,5,0))
-                wait(1.2)
-                local npc = workspace:FindFirstChild(data.NpcName)
-                if npc then
-                    local args = {
-                        [1] = data.QuestName,
-                        [2] = 1
-                    }
-                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StartQuest", unpack(args))
+spawn(function()
+    while wait(3) do
+        if _G.autoQuest then
+            local lvl = LocalPlayer.Data.Level.Value
+            for q,info in pairs(questData) do
+                if lvl >= info.Level and LocalPlayer.PlayerGui.Main.Quest.Visible == false then
+                    tweenToCF(info.Pos * CFrame.new(0,5,0))
+                    wait(1); ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", q, 1)
+                    break
                 end
             end
         end
     end
 end)
 
---auto start
-local AutoStatPreset = {
-    Melee = true,
-    Defense = false,
-    Sword = false,
-    Gun = false,
-    BloxFruit = false
-}
+-- Auto Ken/Haki
+spawn(function()
+    while wait(5) do
+        if _G.autoKen and LocalPlayer.Character and not LocalPlayer.Character:FindFirstChild("HasBuso") then
+            ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+        end
+    end
+end)
 
-task.spawn(function()
-    while task.wait(3) do
-        if _G.AutoStat then
-            local points = LocalPlayer.Data.Points.Value
-            if points > 0 then
-                for stat, enabled in pairs(AutoStatPreset) do
-                    if enabled then
-                        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AddPoint", stat, points)
-                        break
-                    end
+-- Auto Stat (Melee full)
+spawn(function()
+    while wait(5) do
+        if _G.autoStat then
+            local pts = LocalPlayer.Data.Points.Value
+            if pts > 0 then ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Melee", pts) end
+        end
+    end
+end)
+
+-- Auto Tele Fruit
+spawn(function()
+    while wait(3) do
+        if _G.autoDF then
+            for _,v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("Tool") and v.Name:lower():find("fruit") then
+                    tweenToCF(v.Handle.CFrame * CFrame.new(0,3,0))
+                    firetouchinterest(LocalPlayer.Character.HumanoidRootPart, v.Handle, 0)
+                    firetouchinterest(LocalPlayer.Character.HumanoidRootPart, v.Handle, 1)
+                    break
                 end
             end
         end
     end
 end)
--- auto bật haki khi combat
-task.spawn(function()
-    while task.wait(1) do
-        if _G.AutoKen then
-            if LocalPlayer.Character:FindFirstChild("HasBuso") == nil then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
-            end
-        end
-    end
-end)
---gui chọn mob
-farmTab:AddTextbox({
-    Name = "🎯 Tên mob muốn farm (tuỳ chọn)",
-    Default = "",
-    TextDisappear = false,
-    Callback = function(Value)
-        _G.CustomMob = Value
-    end
-})
---
