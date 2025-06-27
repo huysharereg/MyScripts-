@@ -14,16 +14,12 @@ local Settings = {
     FOV = 120
 }
 
--- Hook __namecall cho Silent Aim
-local mt = getrawmetatable(game)
-setreadonly(mt, false)
-local old = mt.__namecall
-
-function isEnemy(player)
+-- Enemy check & closest
+local function isEnemy(player)
     return player.Team ~= LocalPlayer.Team
 end
 
-function getClosestEnemy()
+local function getClosestEnemy()
     local closest, dist = nil, math.huge
     local mouse = UserInputService:GetMouseLocation()
     for _, p in pairs(Players:GetPlayers()) do
@@ -42,20 +38,34 @@ function getClosestEnemy()
     return closest
 end
 
-mt.__namecall = newcclosure(function(self, ...)
+-- Hook __namecall (Sync:Fire)
+local old_namecall
+old_namecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local args = { ... }
     local method = getnamecallmethod()
-    if Settings.SilentAim and method == "FireServer" and tostring(self):lower():find("shoot") then
-        local target = getClosestEnemy()
-        if target and target.Character and target.Character:FindFirstChild("Head") then
-            args[1] = target.Character.Head.Position
-            return old(self, unpack(args))
+
+    if method == "Fire" and self.Name == "Sync" then
+        local caller = args[1]
+        local message = args[2]
+        local ammo, cframe, id, weapon, projectile = unpack(args, 3)
+
+        local function isShootEvent()
+            return typeof(message) == "Instance" and message.Name and message.Name:find(LocalPlayer.Name)
+        end
+
+        if isShootEvent() and Settings.SilentAim then
+            local target = getClosestEnemy()
+            if target and target.Character and target.Character:FindFirstChild("Head") then
+                cframe = target.Character.Head.CFrame
+                return old_namecall(self, caller, message, ammo, cframe, id, weapon, projectile)
+            end
         end
     end
-    return old(self, ...)
-end)
 
--- ESP + FOV Circle
+    return old_namecall(self, ...)
+end))
+
+-- ESP setup
 local espData, fovCircle = {}, Drawing.new("Circle")
 fovCircle.Radius = Settings.FOV
 fovCircle.Color = Color3.fromRGB(255, 255, 0)
@@ -63,7 +73,7 @@ fovCircle.Thickness = 1
 fovCircle.Transparency = 0.3
 fovCircle.Filled = false
 
-function setupESP(p)
+local function setupESP(p)
     if espData[p] then return end
     local box = Drawing.new("Square")
     local name = Drawing.new("Text")
@@ -95,7 +105,7 @@ RunService.RenderStepped:Connect(function()
                 d.box.Visible = true
 
                 local dist = math.floor((hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
-                local hp = math.floor(p.Character.Humanoid.Health)
+                local hp = math.floor(p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health or 0)
                 d.name.Text = string.format("%s [%dhp | %dm]", p.Name, hp, dist)
                 d.name.Position = Vector2.new(top.X, top.Y - 20)
                 d.name.Visible = true
@@ -111,15 +121,16 @@ RunService.RenderStepped:Connect(function()
 
     -- Kill Aura
     if Settings.KillAura and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local sync = game:GetService("ReplicatedStorage"):FindFirstChild("Sync") or workspace:FindFirstChild("Sync")
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and isEnemy(p) and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") then
-                local d = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-                if d <= Settings.KillAuraRange then
-                    local ev = LocalPlayer:FindFirstChildWhichIsA("RemoteEvent", true)
-                    if ev and tostring(ev):lower():find("shoot") then
-                        ev:FireServer(p.Character.Head.Position)
-                        task.wait(0.1)
-                    end
+            if p ~= LocalPlayer and isEnemy(p) and p.Character and p.Character:FindFirstChild("Head") then
+                local dist = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                if dist <= Settings.KillAuraRange and sync then
+                    local head = p.Character.Head
+                    local fakeMsg = Instance.new("Model", LocalPlayer)
+                    fakeMsg.Name = LocalPlayer.Name .. "_shoot"
+                    sync:Fire(sync, fakeMsg, nil, head.CFrame, nil, nil)
+                    fakeMsg:Destroy()
                 end
             end
         end
