@@ -1,183 +1,139 @@
--- 📦 Services
+-- SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
+local RepS = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local Uis = game:GetService("UserInputService")
 local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- ⚙️ Settings
-local SETTINGS = {
-    SilentAim = false,
-    KillAura = false,
-    ESP = false,
-    KillAuraRange = 100
-}
+-- SETTINGS
+local SilentAim = false
+local KillAura = false
+local ESP_Enabled = false
+local AimLock = false
+local KillAuraRange = 100
+local AimSmooth = false
+local AimDelay = 0.1
 
--- 🧠 Function: Kiểm tra có phải địch không
-local function IsEnemy(player)
-    return player ~= LocalPlayer
-        and player.Team ~= nil
-        and LocalPlayer.Team ~= nil
-        and player.Team ~= LocalPlayer.Team
-        and player.Character
-        and player.Character:FindFirstChild("Humanoid")
-        and player.Character.Humanoid.Health > 0
+-- UTILS
+local function IsEnemy(p)
+    return p ~= LocalPlayer and p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team
 end
 
--- 📌 Lấy địch gần nhất có LineOfSight
-local function GetClosestEnemy()
-    local closest = nil
-    local minDist = math.huge
-    for _, player in pairs(Players:GetPlayers()) do
-        if IsEnemy(player) and player.Character and player.Character:FindFirstChild("Head") then
-            local screenPos, visible = Camera:WorldToViewportPoint(player.Character.Head.Position)
-            if visible then
-                local distance = (UserInputService:GetMouseLocation() - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
-                if distance < minDist then
-                    minDist = distance
-                    closest = player
+local function GetEnemies()
+    return Players:GetPlayers()
+end
+
+local function HasLOS(pos)
+    local ray = Ray.new(Camera.CFrame.Position, (pos - Camera.CFrame.Position).Unit * 500)
+    local hit = Workspace:FindPartOnRay(ray, LocalPlayer.Character)
+    return not hit or hit:IsDescendantOf(Workspace.Characters)
+end
+
+local function GetClosestEnemyHead()
+    local bestHead, bestDist = nil, math.huge
+    for _, p in pairs(GetEnemies()) do
+        if IsEnemy(p) and p.Character and p.Character:FindFirstChild("Head") then
+            local head = p.Character.Head
+            local screen, vis = Camera:WorldToViewportPoint(head.Position)
+            if vis and HasLOS(head.Position) then
+                local dist = (Uis:GetMouseLocation() - Vector2.new(screen.X, screen.Y)).Magnitude
+                if dist < bestDist then
+                    bestDist = dist
+                    bestHead = head
                 end
             end
         end
     end
-    return closest
+    return bestHead
 end
 
--- 🧠 Hook Silent Aim
-local old
-old = hookmetamethod(game, "__namecall", function(self, ...)
+-- HOOK SILENT AIM
+local old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local args = {...}
-    local method = getnamecallmethod()
-
-    if tostring(self) == "Sync" and method == "Fire" and SETTINGS.SilentAim then
-        local closest = GetClosestEnemy()
-        if closest and closest.Character and closest.Character:FindFirstChild("Head") then
-            args[2] = closest.Character.Head.CFrame
-            return old(self, unpack(args))
+    if tostring(self) == "Sync" and getnamecallmethod() == "Fire" then
+        if SilentAim then
+            local head = GetClosestEnemyHead()
+            if head then args[2] = head.CFrame end
         end
+        if KillAura then
+            for _, p in pairs(GetEnemies()) do
+                if IsEnemy(p) and p.Character and p.Character:FindFirstChild("Head") then
+                    local head = p.Character.Head
+                    if (head.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= KillAuraRange and HasLOS(head.Position) then
+                        args[2] = head.CFrame
+                        break
+                    end
+                end
+            end
+        end
+        return old(self, unpack(args))
     end
-
     return old(self, ...)
-end)
+end))
 
--- 🎯 ESP System
-local ESP_DRAWINGS = {}
-
-local function CreateESP(player)
-    if ESP_DRAWINGS[player] then return end
-
-    local box = Drawing.new("Square")
-    box.Color = Color3.fromRGB(255, 0, 0)
-    box.Thickness = 1
-    box.Filled = false
-
-    local line = Drawing.new("Line")
-    line.Color = Color3.fromRGB(0, 255, 0)
-    line.Thickness = 1
-
-    local name = Drawing.new("Text")
-    name.Color = Color3.new(1, 1, 1)
-    name.Size = 13
-    name.Center = true
-    name.Outline = true
-
-    ESP_DRAWINGS[player] = {Box = box, Line = line, Name = name}
+-- ESP
+local ESPData = {}
+local function CreateESP(p)
+    if ESPData[p] then return end
+    local box = Drawing.new("Square"); box.Thickness=1; box.Filled=false; box.Color=Color3.fromRGB(255,0,0)
+    local line = Drawing.new("Line");   line.Thickness=1; line.Color=Color3.fromRGB(0,255,0)
+    local txt  = Drawing.new("Text");   txt.Center=true; txt.Outline=true; txt.Color=Color3.new(1,1,1); txt.Size=13
+    ESPData[p] = {B=box,L=line,T=txt}
 end
 
 local function UpdateESP()
-    for _, player in pairs(Players:GetPlayers()) do
-        if IsEnemy(player) then
-            CreateESP(player)
-        end
+    for _,p in pairs(GetEnemies()) do
+        if IsEnemy(p) then CreateESP(p) end
     end
-
-    for player, draw in pairs(ESP_DRAWINGS) do
-        if SETTINGS.ESP and IsEnemy(player) and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local root = player.Character.HumanoidRootPart
-            local head = player.Character:FindFirstChild("Head")
-            if head then
-                local pos, visible = Camera:WorldToViewportPoint(root.Position)
-                if visible then
-                    draw.Box.Size = Vector2.new(60, 100)
-                    draw.Box.Position = Vector2.new(pos.X - 30, pos.Y - 60)
-                    draw.Box.Visible = true
-
-                    draw.Line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-                    draw.Line.To = Vector2.new(pos.X, pos.Y)
-                    draw.Line.Visible = true
-
-                    local dist = math.floor((root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
-                    local hp = math.floor(player.Character.Humanoid.Health)
-                    draw.Name.Text = string.format("%s [%dhp | %dm]", player.Name, hp, dist)
-                    draw.Name.Position = Vector2.new(pos.X, pos.Y - 70)
-                    draw.Name.Visible = true
-                else
-                    draw.Box.Visible = false
-                    draw.Line.Visible = false
-                    draw.Name.Visible = false
-                end
+    for p,d in pairs(ESPData) do
+        if ESP_Enabled and IsEnemy(p) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Head") then
+            local root = p.Character.HumanoidRootPart
+            local head = p.Character.Head
+            local screen, vis = Camera:WorldToViewportPoint(root.Position)
+            if vis then
+                d.B.Size = Vector2.new(60,100)
+                d.B.Position = Vector2.new(screen.X-30, screen.Y-50); d.B.Visible=true
+                d.L.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                d.L.To = Vector2.new(screen.X, screen.Y); d.L.Visible=true
+                local dist = math.floor((root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
+                local hp = math.floor(p.Character.Humanoid.Health)
+                d.T.Text = string.format("%s [%dhp %dm]", p.Name, hp, dist)
+                d.T.Position = Vector2.new(screen.X, screen.Y-60); d.T.Visible=true
+            else
+                d.B.Visible=false; d.L.Visible=false; d.T.Visible=false
             end
         else
-            if draw.Box then draw.Box.Visible = false end
-            if draw.Line then draw.Line.Visible = false end
-            if draw.Name then draw.Name.Visible = false end
+            d.B.Visible=false; d.L.Visible=false; d.T.Visible=false
         end
     end
 end
 
--- ⚔️ Kill Aura
-local function DoKillAura()
-    for _, player in pairs(Players:GetPlayers()) do
-        if IsEnemy(player) and player.Character and player.Character:FindFirstChild("Head") then
-            local dist = (player.Character.Head.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-            if dist <= SETTINGS.KillAuraRange then
-                local sync = LocalPlayer:FindFirstChild("Sync") or ReplicatedStorage:FindFirstChild("Sync")
-                if sync then
-                    sync:Fire(sync, player.Name .. "_shoot", nil, player.Character.Head.CFrame, math.random(), "Gun", {})
-                end
-            end
-        end
-    end
-end
-
--- 🔁 Main Loop
+-- AIMLOCK
 RunService.RenderStepped:Connect(function()
-    if SETTINGS.ESP then UpdateESP() end
-    if SETTINGS.KillAura then DoKillAura() end
+    if AimLock then
+        local head = GetClosestEnemyHead()
+        if head then
+            local targetCF = CFrame.lookAt(Camera.CFrame.Position, head.Position)
+            local r = AimSmooth and AimDelay or 1
+            Camera.CFrame = Camera.CFrame:Lerp(targetCF, r)
+        end
+    end
+    if ESP_Enabled then UpdateESP() end
 end)
 
--- 🧩 UI (Orion)
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jensonhirst/Orion/main/source"))()
-local Window = OrionLib:MakeWindow({Name = "Gunfight Arena | HuyScript", HidePremium = false, SaveConfig = false, ConfigFolder = "GunfightConfig"})
+-- UI
+local Orion = loadstring(game:HttpGet("https://raw.githubusercontent.com/jensonhirst/Orion/main/source"))()
+local Window = Orion:MakeWindow({Name="GFA Pro+ Enhanced", HidePremium=false, SaveConfig=false, ConfigFolder="GFA_ProPlus"})
 
-local MainTab = Window:MakeTab({Name = "Main", Icon = "", PremiumOnly = false})
+local Tab = Window:MakeTab({Name="Main", Icon="", PremiumOnly=false})
+Tab:AddToggle({Name="Silent Aim",Default=false,Callback=function(v) SilentAim=v end})
+Tab:AddToggle({Name="Kill Aura",Default=false,Callback=function(v) KillAura=v end})
+Tab:AddSlider({Name="KillAura Range",Min=20,Max=300,Default=100,Callback=function(v) KillAuraRange=v end})
+Tab:AddToggle({Name="ESP",Default=false,Callback=function(v) ESP_Enabled=v end})
+Tab:AddToggle({Name="AimLock",Default=false,Callback=function(v) AimLock=v end})
+Tab:AddToggle({Name="Smooth Aim Lock",Default=false,Callback=function(v) AimSmooth=v end})
+Tab:AddSlider({Name="AimLock Delay",Min=0.01,Max=0.3,Default=0.1,Callback=function(v) AimDelay=v end})
 
-MainTab:AddToggle({
-    Name = "Silent Aim",
-    Default = false,
-    Callback = function(v) SETTINGS.SilentAim = v end
-})
-
-MainTab:AddToggle({
-    Name = "Kill Aura (AutoKill)",
-    Default = false,
-    Callback = function(v) SETTINGS.KillAura = v end
-})
-
-MainTab:AddToggle({
-    Name = "ESP (Box, Name, Line)",
-    Default = false,
-    Callback = function(v) SETTINGS.ESP = v end
-})
-
-MainTab:AddSlider({
-    Name = "Kill Aura Range",
-    Min = 20,
-    Max = 200,
-    Default = 100,
-    Callback = function(v) SETTINGS.KillAuraRange = v end
-})
-
-OrionLib:Init()
+Orion:Init()
