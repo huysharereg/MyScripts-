@@ -1,18 +1,93 @@
+-- Bắt đầu
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local Teams = game:GetService("Teams")
 
+-- Giao diện UI Orion
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jensonhirst/Orion/main/source"))()
+local Window = OrionLib:MakeWindow({Name = "Gunfight Arena Hub", HidePremium = false, SaveConfig = false, ConfigFolder = "GunfightHub"})
+
+-- Settings
 local Settings = {
-    SilentAim = true,
-    ESP = true,
-    KillAura = true,
+    SilentAim = false,
+    ESP = false,
+    KillAura = false,
     KillAuraRange = 50
 }
 
--- 🔍 Get Closest Enemy
+-- Tabs
+local MainTab = Window:MakeTab({Name = "Main", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+
+-- Toggle UI
+MainTab:AddToggle({
+    Name = "Silent Aim",
+    Default = false,
+    Callback = function(Value)
+        Settings.SilentAim = Value
+    end
+})
+
+MainTab:AddToggle({
+    Name = "ESP (Box, Name, HP, Distance)",
+    Default = false,
+    Callback = function(Value)
+        Settings.ESP = Value
+    end
+})
+
+MainTab:AddToggle({
+    Name = "Kill Aura (Auto Kill)",
+    Default = false,
+    Callback = function(Value)
+        Settings.KillAura = Value
+    end
+})
+
+MainTab:AddSlider({
+    Name = "Kill Aura Range",
+    Min = 10,
+    Max = 100,
+    Default = 50,
+    Increment = 1,
+    Callback = function(Value)
+        Settings.KillAuraRange = Value
+    end
+})
+
+-- ESP Data
+local espData = {}
+
+local function setupESP(p)
+    if espData[p] then return end
+
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Filled = false
+    box.Color = Color3.fromRGB(255, 0, 0)
+
+    local line = Drawing.new("Line")
+    line.Thickness = 1
+    line.Color = Color3.fromRGB(0, 255, 0)
+
+    local name = Drawing.new("Text")
+    name.Size = 14
+    name.Center = true
+    name.Outline = true
+    name.Color = Color3.fromRGB(255, 255, 255)
+
+    espData[p] = {Box = box, Line = line, Text = name}
+end
+
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then setupESP(p) end
+end
+Players.PlayerAdded:Connect(function(p)
+    if p ~= LocalPlayer then setupESP(p) end
+end)
+
+-- Gần nhất
 local function getClosestEnemy()
     local closest, dist = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
@@ -32,19 +107,18 @@ local function getClosestEnemy()
     return closest
 end
 
--- 🧠 Silent Aim Hook
+-- Hook Silent Aim
 local mt = getrawmetatable(game)
 setreadonly(mt, false)
 local old = mt.__namecall
-
 mt.__namecall = newcclosure(function(self, ...)
-    local args = {...}
+    local args = { ... }
     local method = getnamecallmethod()
 
     if (Settings.SilentAim and method == "FireServer") and (tostring(self):lower():find("shoot") or tostring(self):lower():find("sync")) then
         local target = getClosestEnemy()
         if target and target.Character and target.Character:FindFirstChild("Head") then
-            args[2] = target.Character.Head.CFrame -- đây là pos/cframe trong nhiều game
+            args[2] = target.Character.Head.CFrame
             return old(self, unpack(args))
         end
     end
@@ -52,79 +126,47 @@ mt.__namecall = newcclosure(function(self, ...)
     return old(self, ...)
 end)
 
--- 📦 ESP setup
-local espData = {}
-
-local function setupESP(player)
-    if espData[player] then return end
-    local box = Drawing.new("Square")
-    box.Thickness = 2
-    box.Filled = false
-    box.Color = Color3.fromRGB(255, 0, 0)
-
-    local line = Drawing.new("Line")
-    line.Thickness = 1
-    line.Color = Color3.fromRGB(0, 255, 0)
-
-    local text = Drawing.new("Text")
-    text.Size = 14
-    text.Center = true
-    text.Outline = true
-    text.Color = Color3.fromRGB(255, 255, 255)
-
-    espData[player] = {Box = box, Line = line, Text = text}
-end
-
--- ESP add for current and future players
-for _, p in pairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then setupESP(p) end
-end
-Players.PlayerAdded:Connect(function(p)
-    if p ~= LocalPlayer then setupESP(p) end
-end)
-
--- 🔁 ESP + Kill Aura loop
+-- Loop ESP + KillAura
 RunService.RenderStepped:Connect(function()
-    for player, drawings in pairs(espData) do
+    for player, d in pairs(espData) do
         local char = player.Character
-        if Settings.ESP and char and char:FindFirstChild("Head") and char:FindFirstChild("HumanoidRootPart") and player.Team ~= LocalPlayer.Team then
+        if Settings.ESP and player.Team ~= LocalPlayer.Team and char and char:FindFirstChild("Head") and char:FindFirstChild("HumanoidRootPart") then
             local pos, visible = Camera:WorldToViewportPoint(char.Head.Position)
             if visible then
-                -- ESP Box
-                drawings.Box.Position = Vector2.new(pos.X - 25, pos.Y - 50)
-                drawings.Box.Size = Vector2.new(50, 100)
-                drawings.Box.Visible = true
+                -- Box
+                d.Box.Position = Vector2.new(pos.X - 25, pos.Y - 50)
+                d.Box.Size = Vector2.new(50, 100)
+                d.Box.Visible = true
 
-                -- ESP Line
-                drawings.Line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-                drawings.Line.To = Vector2.new(pos.X, pos.Y)
-                drawings.Line.Visible = true
+                -- Line
+                d.Line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                d.Line.To = Vector2.new(pos.X, pos.Y)
+                d.Line.Visible = true
 
-                -- ESP Text
+                -- Text
                 local hp = math.floor(char:FindFirstChild("Humanoid").Health)
                 local dist = math.floor((char.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
-                drawings.Text.Text = string.format("%s [%dhp | %dm]", player.Name, hp, dist)
-                drawings.Text.Position = Vector2.new(pos.X, pos.Y - 60)
-                drawings.Text.Visible = true
+                d.Text.Text = string.format("%s [%dhp | %dm]", player.Name, hp, dist)
+                d.Text.Position = Vector2.new(pos.X, pos.Y - 60)
+                d.Text.Visible = true
             else
-                drawings.Box.Visible = false
-                drawings.Line.Visible = false
-                drawings.Text.Visible = false
+                d.Box.Visible = false
+                d.Line.Visible = false
+                d.Text.Visible = false
             end
         else
-            drawings.Box.Visible = false
-            drawings.Line.Visible = false
-            drawings.Text.Visible = false
+            d.Box.Visible = false
+            d.Line.Visible = false
+            d.Text.Visible = false
         end
     end
 
-    -- ⚔ Kill Aura
+    -- Kill Aura
     if Settings.KillAura and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") then
                 local dist = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
                 if dist <= Settings.KillAuraRange then
-                    -- Gọi Remote để bắn
                     for _, remote in pairs(LocalPlayer:GetDescendants()) do
                         if remote:IsA("RemoteEvent") and tostring(remote):lower():find("shoot") then
                             remote:FireServer(nil, p.Character.Head.CFrame)
@@ -135,3 +177,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
+
+-- UI Start
+OrionLib:Init()
