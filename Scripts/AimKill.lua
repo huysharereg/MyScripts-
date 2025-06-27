@@ -24,25 +24,19 @@ local MainTab = Window:MakeTab({
 MainTab:AddToggle({
 	Name = "Silent Aim",
 	Default = false,
-	Callback = function(v)
-		Settings.SilentAim = v
-	end
+	Callback = function(v) Settings.SilentAim = v end
 })
 
 MainTab:AddToggle({
 	Name = "ESP",
 	Default = false,
-	Callback = function(v)
-		Settings.ESP = v
-	end
+	Callback = function(v) Settings.ESP = v end
 })
 
 MainTab:AddToggle({
 	Name = "Auto Kill (Kill Aura)",
 	Default = false,
-	Callback = function(v)
-		Settings.KillAura = v
-	end
+	Callback = function(v) Settings.KillAura = v end
 })
 
 MainTab:AddSlider({
@@ -50,20 +44,19 @@ MainTab:AddSlider({
 	Min = 10,
 	Max = 100,
 	Default = 50,
-	Callback = function(v)
-		Settings.KillAuraRange = v
-	end
+	Callback = function(v) Settings.KillAuraRange = v end
 })
 
 -- Khởi động UI
 Library:Init()
 
--- ===== CORE SCRIPT BẮT ĐẦU =====
+-- ===== CORE SCRIPT =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
+-- Lấy địch gần nhất
 local function getClosestEnemy()
 	local closest = nil
 	local shortest = math.huge
@@ -102,7 +95,7 @@ mt.__namecall = newcclosure(function(self, ...)
 	return old(self, ...)
 end)
 
--- ESP và Kill Aura
+-- ESP & Kill Aura
 local espData = {}
 RunService.RenderStepped:Connect(function()
 	for _, plr in pairs(Players:GetPlayers()) do
