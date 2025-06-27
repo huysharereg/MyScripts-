@@ -9,39 +9,29 @@ return function()
         SilentAim = false,
         ESP = false,
         KillAura = false,
-        KillAuraRange = 50
+        KillAuraRange = 50,
+        FOV = 120
     }
 
-    -- __namecall hook for silent aim
     local mt = getrawmetatable(game)
     setreadonly(mt, false)
     local old = mt.__namecall
 
-    mt.__namecall = newcclosure(function(self, ...)
-        local args = { ... }
-        local method = getnamecallmethod()
-
-        if Settings.SilentAim and method == "FireServer" and tostring(self):lower():find("shoot") then
-            local target = getClosestEnemy()
-            if target and target.Character and target.Character:FindFirstChild("Head") then
-                args[1] = target.Character.Head.Position
-                return old(self, unpack(args))
-            end
-        end
-
-        return old(self, ...)
-    end)
+    function isEnemy(player)
+        return player.Team ~= LocalPlayer.Team
+    end
 
     function getClosestEnemy()
         local closest, dist = nil, math.huge
-        local mpos = UserInputService:GetMouseLocation()
+        local mouse = UserInputService:GetMouseLocation()
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
-                local screenPos, visible = Camera:WorldToViewportPoint(p.Character.Head.Position)
+            if p ~= LocalPlayer and isEnemy(p) and p.Character and p.Character:FindFirstChild("Head") then
+                local head = p.Character.Head
+                local screenPos, visible = Camera:WorldToViewportPoint(head.Position)
                 if visible then
-                    local diff = (Vector2.new(screenPos.X, screenPos.Y) - mpos).Magnitude
-                    if diff < dist then
-                        dist = diff
+                    local mag = (Vector2.new(screenPos.X, screenPos.Y) - mouse).Magnitude
+                    if mag < Settings.FOV and mag < dist then
+                        dist = mag
                         closest = p
                     end
                 end
@@ -50,66 +40,69 @@ return function()
         return closest
     end
 
-    -- ESP Drawing
-    local espData = {}
+    mt.__namecall = newcclosure(function(self, ...)
+        local args = { ... }
+        local method = getnamecallmethod()
+        if Settings.SilentAim and method == "FireServer" and tostring(self):lower():find("shoot") then
+            local target = getClosestEnemy()
+            if target and target.Character and target.Character:FindFirstChild("Head") then
+                args[1] = target.Character.Head.Position
+                return old(self, unpack(args))
+            end
+        end
+        return old(self, ...)
+    end)
+
+    -- ESP Setup
+    local espData, fovCircle = {}, Drawing.new("Circle")
+    fovCircle.Radius = Settings.FOV
+    fovCircle.Color = Color3.fromRGB(255, 255, 0)
+    fovCircle.Thickness = 1
+    fovCircle.Transparency = 0.3
+    fovCircle.Filled = false
 
     function setupESP(p)
         if espData[p] then return end
-
         local box = Drawing.new("Square")
-        box.Thickness = 1
-        box.Filled = false
-        box.Color = Color3.fromRGB(255, 0, 0)
-
-        local line = Drawing.new("Line")
-        line.Thickness = 1
-        line.Color = Color3.fromRGB(0, 255, 0)
-
         local name = Drawing.new("Text")
-        name.Size = 14
-        name.Color = Color3.new(1, 1, 1)
-        name.Center = true
-        name.Outline = true
-
-        espData[p] = { box = box, line = line, name = name }
+        box.Thickness, box.Filled, box.Color = 1, false, Color3.new(1, 0, 0)
+        name.Size, name.Center, name.Outline, name.Color = 14, true, true, Color3.new(1, 1, 1)
+        espData[p] = { box = box, name = name }
     end
 
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then setupESP(p) end
-    end
-    Players.PlayerAdded:Connect(function(p)
-        if p ~= LocalPlayer then setupESP(p) end
-    end)
+    for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then setupESP(p) end end
+    Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer then setupESP(p) end end)
 
     RunService.RenderStepped:Connect(function()
+        local mouse = UserInputService:GetMouseLocation()
+        fovCircle.Position = mouse
+        fovCircle.Visible = Settings.SilentAim
+
         for p, d in pairs(espData) do
-            if Settings.ESP and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") then
-                local pos, visible = Camera:WorldToViewportPoint(p.Character.Head.Position)
-                if visible then
-                    -- box
-                    d.box.Size = Vector2.new(50, 100)
-                    d.box.Position = Vector2.new(pos.X - 25, pos.Y - 50)
+            if Settings.ESP and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") and isEnemy(p) then
+                local head = p.Character.Head
+                local hrp = p.Character.HumanoidRootPart
+                local top = Camera:WorldToViewportPoint(head.Position)
+                local bottom = Camera:WorldToViewportPoint(hrp.Position)
+
+                if top.Z > 0 and bottom.Z > 0 then
+                    local height = math.abs(top.Y - bottom.Y)
+                    local width = height / 2
+                    d.box.Size = Vector2.new(width, height)
+                    d.box.Position = Vector2.new(top.X - width / 2, top.Y)
                     d.box.Visible = true
 
-                    -- line
-                    d.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                    d.line.To = Vector2.new(pos.X, pos.Y)
-                    d.line.Visible = true
-
-                    -- name
-                    local hp = math.floor(p.Character:FindFirstChild("Humanoid").Health)
-                    local dist = math.floor((p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
+                    local dist = math.floor((hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
+                    local hp = math.floor(p.Character.Humanoid.Health)
                     d.name.Text = string.format("%s [%dhp | %dm]", p.Name, hp, dist)
-                    d.name.Position = Vector2.new(pos.X, pos.Y - 60)
+                    d.name.Position = Vector2.new(top.X, top.Y - 20)
                     d.name.Visible = true
                 else
                     d.box.Visible = false
-                    d.line.Visible = false
                     d.name.Visible = false
                 end
             else
                 d.box.Visible = false
-                d.line.Visible = false
                 d.name.Visible = false
             end
         end
@@ -117,12 +110,13 @@ return function()
         -- Kill Aura
         if Settings.KillAura and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") then
+                if p ~= LocalPlayer and isEnemy(p) and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") then
                     local d = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
                     if d <= Settings.KillAuraRange then
                         local ev = LocalPlayer:FindFirstChildWhichIsA("RemoteEvent", true)
                         if ev and tostring(ev):lower():find("shoot") then
                             ev:FireServer(p.Character.Head.Position)
+                            task.wait(0.1) -- Giảm spam server
                         end
                     end
                 end
@@ -133,11 +127,10 @@ return function()
     -- UI
     local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
     local Main = Instance.new("Frame", ScreenGui)
-    Main.Size = UDim2.new(0, 200, 0, 140)
+    Main.Size = UDim2.new(0, 200, 0, 170)
     Main.Position = UDim2.new(0, 100, 0, 100)
     Main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Main.Active = true
-    Main.Draggable = true
+    Main.Active, Main.Draggable = true, true
 
     local function makeButton(text, y, toggle)
         local btn = Instance.new("TextButton", Main)
@@ -156,16 +149,30 @@ return function()
     makeButton("ESP", 50, "ESP")
     makeButton("Kill Aura", 90, "KillAura")
 
+    local fovLabel = Instance.new("TextLabel", Main)
+    fovLabel.Size = UDim2.new(1, -10, 0, 20)
+    fovLabel.Position = UDim2.new(0, 5, 0, 130)
+    fovLabel.Text = "FOV: " .. Settings.FOV
+    fovLabel.TextColor3 = Color3.new(1,1,1)
+    fovLabel.BackgroundTransparency = 1
+    fovLabel.TextScaled = true
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            Settings.FOV = math.clamp(Settings.FOV + input.Position.Z * 5, 30, 300)
+            fovCircle.Radius = Settings.FOV
+            fovLabel.Text = "FOV: " .. math.floor(Settings.FOV)
+        end
+    end)
+
     -- Minimize
     local mini = Instance.new("TextButton", ScreenGui)
-    mini.Text = "≡"
+    mini.Text, mini.Visible = "≡", false
     mini.Size = UDim2.new(0, 30, 0, 30)
     mini.Position = UDim2.new(0, 10, 0, 10)
-    mini.Visible = false
     mini.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     mini.MouseButton1Click:Connect(function()
-        Main.Visible = true
-        mini.Visible = false
+        Main.Visible, mini.Visible = true, false
     end)
 
     local minBtn = Instance.new("TextButton", Main)
@@ -174,7 +181,6 @@ return function()
     minBtn.Position = UDim2.new(1, -25, 0, 5)
     minBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
     minBtn.MouseButton1Click:Connect(function()
-        Main.Visible = false
-        mini.Visible = true
+        Main.Visible, mini.Visible = false, true
     end)
 end
