@@ -1,5 +1,5 @@
 --// 🔥 GUNFIGHT ARENA FULL SCRIPT BY WUMBJI + CHATGPT (Enhanced)
-// ✅ Includes: Silent Aim with wall-check, AimLock, Smooth Aim, KillAura (line of sight), Weapon/Camo changer, Orion UI
+-- ✅ Includes: Silent Aim with wall-check, AimLock, Smooth Aim, KillAura (line of sight), Weapon/Camo changer, Orion UI
 
 -- Optimization
 local game, workspace = game, workspace
