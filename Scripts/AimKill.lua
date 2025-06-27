@@ -11,11 +11,14 @@ return function()
         KillAuraRange = 50
     }
 
+    -- Đợi PlayerGui chắc chắn tồn tại
+    repeat wait() until LocalPlayer:FindFirstChild("PlayerGui")
+
     -- UI using PlayerGui
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "XenoUI"
     ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    ScreenGui.Parent = LocalPlayer.PlayerGui
 
     local Main = Instance.new("Frame", ScreenGui)
     Main.Size = UDim2.new(0, 200, 0, 140)
