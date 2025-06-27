@@ -1,36 +1,50 @@
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Camera = workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
+--// 🔥 GUNFIGHT ARENA FULL SCRIPT BY WUMBJI + CHATGPT (Enhanced)
+// ✅ Includes: Silent Aim with wall-check, AimLock, Smooth Aim, KillAura (line of sight), Weapon/Camo changer, Orion UI
 
-local Settings = {
-    SilentAim = false,
-    ESP = false,
-    KillAura = false,
-    AimLock = false,
-    KillAuraRange = 50,
-    AimSmoothness = 0.1,
-    FOV = 120
-}
+-- Optimization
+local game, workspace = game, workspace
+local players = game:GetService("Players")
+local player = players.LocalPlayer
+local rs = game:GetService("RunService")
+local camera = workspace.CurrentCamera
+local uis = game:GetService("UserInputService")
+local teams = game:GetService("Teams")
 
--- Enemy check & closest
-local function isEnemy(player)
-    return player.Team ~= LocalPlayer.Team
+local silentaim, aimlock, smoothlock, killAura, noforcefields = false, false, false, false, false
+local aimDelay = 0.05 -- default smooth aim delay
+
+-- Load Orion UI
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/jensonhirst/Orion/main/source')))()
+OrionLib:MakeNotification({Name = "GunFight Arena Enhanced", Content = "SilentAim, AimLock, KillAura, etc", Image = "", Time = 5})
+
+local weapons, camos = {}, {}
+for _,v in pairs(game:GetService("ReplicatedStorage").Weapons:GetChildren()) do table.insert(weapons,v.Name) end
+for _,v in pairs(game:GetService("ReplicatedStorage").Camos:GetChildren()) do table.insert(camos,v.Name) end
+
+-- Remove sway
+local s = player.PlayerScripts.Vortex.Modifiers.Steadiness
+local m = player.PlayerScripts.Vortex.Modifiers.Mobility
+local function r() if s and s.Value>0 then s.Value=0 end if m and m.Value>0 then m.Value=0 end end
+if s then s.Changed:Connect(r) end if m then m.Changed:Connect(r) end r()
+
+-- Utility
+local function hasLineOfSight(targetPos)
+    local ray = Ray.new(camera.CFrame.Position, (targetPos - camera.CFrame.Position).Unit * 500)
+    local hit = workspace:FindPartOnRay(ray, player.Character)
+    return not hit or hit:IsDescendantOf(workspace.Characters)
 end
 
-local function getClosestEnemy()
-    local closest, dist = nil, math.huge
-    local mouse = UserInputService:GetMouseLocation()
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and isEnemy(p) and p.Character and p.Character:FindFirstChild("Head") then
-            local head = p.Character.Head
-            local screenPos, visible = Camera:WorldToViewportPoint(head.Position)
-            if visible then
-                local mag = (Vector2.new(screenPos.X, screenPos.Y) - mouse).Magnitude
-                if mag < Settings.FOV and mag < dist then
-                    dist = mag
-                    closest = p
+local function get_closest_enemy()
+    local closest, distance = nil, math.huge
+    for _, character in pairs(workspace:GetChildren()) do
+        local p = players:FindFirstChild(character.Name)
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if p and p ~= player and hrp and p.Team ~= player.Team and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
+            local screenPos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+            if onScreen and hasLineOfSight(hrp.Position) then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - uis:GetMouseLocation()).Magnitude
+                if dist < distance then
+                    distance, closest = dist, character
                 end
             end
         end
@@ -38,172 +52,86 @@ local function getClosestEnemy()
     return closest
 end
 
--- Hook __namecall (Sync:Fire)
+-- Silent Aim Hook
+local events = {
+    ["ShootEvent"] = function(arg)
+        return (typeof(arg) == "Instance" and arg.Name and (string.find(arg.Name, players.LocalPlayer.Name)))
+    end,
+}
 local old_namecall
-old_namecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local args = { ... }
+old_namecall = hookmetamethod(game, "__namecall", function(self, caller, message, ...)
     local method = getnamecallmethod()
-
     if method == "Fire" and self.Name == "Sync" then
-        local caller = args[1]
-        local message = args[2]
-        local ammo, cframe, id, weapon, projectile = unpack(args, 3)
-
-        local function isShootEvent()
-            return typeof(message) == "Instance" and message.Name and message.Name:find(LocalPlayer.Name)
-        end
-
-        if isShootEvent() and Settings.SilentAim then
-            local target = getClosestEnemy()
-            if target and target.Character and target.Character:FindFirstChild("Head") then
-                cframe = target.Character.Head.CFrame
-                return old_namecall(self, caller, message, ammo, cframe, id, weapon, projectile)
+        for event, identify in pairs(events) do
+            if event == "ShootEvent" and identify(message) then
+                local closest = get_closest_enemy()
+                local ammo, cframe, id, weapon, projectile = ...
+                if closest and closest:FindFirstChild("Head") and silentaim and hasLineOfSight(closest.Head.Position) then
+                    cframe = closest.Head.CFrame
+                    return old_namecall(self, caller, message, ammo, cframe, id, weapon, projectile, ...)
+                end
             end
         end
     end
+    return old_namecall(self, caller, message, ...)
+end)
 
-    return old_namecall(self, ...)
-end))
-
--- ESP setup
-local espData, fovCircle = {}, Drawing.new("Circle")
-fovCircle.Radius = Settings.FOV
-fovCircle.Color = Color3.fromRGB(255, 255, 0)
-fovCircle.Thickness = 1
-fovCircle.Transparency = 0.3
-fovCircle.Filled = false
-
-local function setupESP(p)
-    if espData[p] then return end
-    local box = Drawing.new("Square")
-    local name = Drawing.new("Text")
-    box.Thickness, box.Filled, box.Color = 1, false, Color3.new(1, 0, 0)
-    name.Size, name.Center, name.Outline, name.Color = 14, true, true, Color3.new(1, 1, 1)
-    espData[p] = { box = box, name = name }
-end
-
-for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then setupESP(p) end end
-Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer then setupESP(p) end end)
-
-RunService.RenderStepped:Connect(function()
-    local mouse = UserInputService:GetMouseLocation()
-    fovCircle.Position = mouse
-    fovCircle.Visible = Settings.SilentAim
-
-    for p, d in pairs(espData) do
-        if Settings.ESP and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") and isEnemy(p) then
-            local head = p.Character.Head
-            local hrp = p.Character.HumanoidRootPart
-            local top = Camera:WorldToViewportPoint(head.Position)
-            local bottom = Camera:WorldToViewportPoint(hrp.Position)
-
-            if top.Z > 0 and bottom.Z > 0 then
-                local height = math.abs(top.Y - bottom.Y)
-                local width = height / 2
-                d.box.Size = Vector2.new(width, height)
-                d.box.Position = Vector2.new(top.X - width / 2, top.Y)
-                d.box.Visible = true
-
-                local dist = math.floor((hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
-                local hp = math.floor(p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health or 0)
-                d.name.Text = string.format("%s [%dhp | %dm]", p.Name, hp, dist)
-                d.name.Position = Vector2.new(top.X, top.Y - 20)
-                d.name.Visible = true
-            else
-                d.box.Visible = false
-                d.name.Visible = false
-            end
-        else
-            d.box.Visible = false
-            d.name.Visible = false
+-- KillAura + Smooth Aim
+rs.RenderStepped:Connect(function()
+    local target = get_closest_enemy()
+    if aimlock and target and target:FindFirstChild("Head") then
+        local headPos = target.Head.Position
+        if hasLineOfSight(headPos) then
+            local newCF = CFrame.lookAt(camera.CFrame.Position, headPos)
+            camera.CFrame = camera.CFrame:Lerp(newCF, aimDelay)
         end
     end
 
-    -- Kill Aura
-    if Settings.KillAura and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local sync = game:GetService("ReplicatedStorage"):FindFirstChild("Sync") or workspace:FindFirstChild("Sync")
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and isEnemy(p) and p.Character and p.Character:FindFirstChild("Head") then
-                local dist = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-                if dist <= Settings.KillAuraRange and sync then
-                    local head = p.Character.Head
-                    local fakeMsg = Instance.new("Model", LocalPlayer)
-                    fakeMsg.Name = LocalPlayer.Name .. "_shoot"
-                    sync:Fire(sync, fakeMsg, nil, head.CFrame, nil, nil)
-                    fakeMsg:Destroy()
+    if killAura and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        for _, p in pairs(players:GetPlayers()) do
+            if p ~= player and p.Team ~= player.Team and p.Character and p.Character:FindFirstChild("Head") and hasLineOfSight(p.Character.Head.Position) then
+                local sync = player:FindFirstChild("Sync") or game:GetService("ReplicatedStorage"):FindFirstChild("Sync")
+                if sync and typeof(sync) == "Instance" and sync:IsA("RemoteEvent") then
+                    local args = {nil, p.Character.Head.CFrame, math.random(), "Gun", {}}
+                    sync:Fire(sync, p.Name.."_shoot", unpack(args))
                 end
             end
         end
     end
 
-    -- Smooth Aim Lock
-    if Settings.AimLock and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local target = getClosestEnemy()
-        if target and target.Character and target.Character:FindFirstChild("Head") then
-            local camPos = Camera.CFrame.Position
-            local targetPos = target.Character.Head.Position
-            local currentLook = Camera.CFrame.LookVector
-            local direction = (targetPos - camPos).Unit
-            local lerped = currentLook:Lerp(direction, Settings.AimSmoothness)
-            Camera.CFrame = CFrame.new(camPos, camPos + lerped)
+    if noforcefields then
+        for _,v in pairs(workspace.Env:GetChildren()) do
+            if string.find(v.Name, "Forcefield") and v.FullSphere and v.FullSphere.Color ~= Color3.fromRGB(0, 102, 255) then
+                v:Destroy()
+            end
         end
     end
 end)
 
 -- UI
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 200, 0, 290)
-Main.Position = UDim2.new(0, 100, 0, 100)
-Main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Main.Active, Main.Draggable = true, true
+local win = OrionLib:MakeWindow({Name="Gunfight Arena | Enhanced", HidePremium=false, SaveConfig=false, ConfigFolder="gunarena"})
+local aimtab = win:MakeTab({Name="Aim", Icon="", PremiumOnly=false})
+local misc = win:MakeTab({Name="Misc", Icon="", PremiumOnly=false})
+local weapon = win:MakeTab({Name="Weapons", Icon="", PremiumOnly=false})
+local settings = win:MakeTab({Name="Settings", Icon="", PremiumOnly=false})
 
-local function makeButton(text, y, toggle)
-    local btn = Instance.new("TextButton", Main)
-    btn.Size = UDim2.new(1, -10, 0, 30)
-    btn.Position = UDim2.new(0, 5, 0, y)
-    btn.Text = text .. ": OFF"
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.MouseButton1Click:Connect(function()
-        Settings[toggle] = not Settings[toggle]
-        btn.Text = text .. ": " .. (Settings[toggle] and "ON" or "OFF")
-    end)
-end
+-- Aim Settings
+aimtab:AddToggle({Name="Silent Aim", Default=false, Callback=function(v) silentaim=v end})
+aimtab:AddToggle({Name="AimLock", Default=false, Callback=function(v) aimlock=v end})
+aimtab:AddToggle({Name="Smooth Aim (Lerp)", Default=false, Callback=function(v) smoothlock=v end})
+aimtab:AddSlider({Name="Smooth Delay", Min=0.01, Max=0.2, Default=0.05, Increment=0.01, Callback=function(val) aimDelay=val end})
+aimtab:AddToggle({Name="Kill Aura", Default=false, Callback=function(v) killAura=v end})
 
-makeButton("Silent Aim", 10, "SilentAim")
-makeButton("ESP", 50, "ESP")
-makeButton("Kill Aura", 90, "KillAura")
-makeButton("Aim Lock", 130, "AimLock")
+-- Misc
+misc:AddToggle({Name="No Forcefields", Default=false, Callback=function(v) noforcefields=v end})
 
--- Smoothness Slider
-local smoothSlider = Instance.new("TextButton", Main)
-smoothSlider.Size = UDim2.new(1, -10, 0, 30)
-smoothSlider.Position = UDim2.new(0, 5, 0, 170)
-smoothSlider.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-smoothSlider.TextColor3 = Color3.new(1, 1, 1)
-smoothSlider.Text = "Smoothness: " .. Settings.AimSmoothness
-smoothSlider.MouseButton1Click:Connect(function()
-    Settings.AimSmoothness = Settings.AimSmoothness + 0.05
-    if Settings.AimSmoothness > 1 then Settings.AimSmoothness = 0.01 end
-    smoothSlider.Text = "Smoothness: " .. string.format("%.2f", Settings.AimSmoothness)
-end)
+-- Weapon Camo
+weapon:AddDropdown({Name="Primary", Options=weapons, Callback=function(v) player:SetAttribute("Primary",v) end})
+weapon:AddDropdown({Name="Primary Camo", Options=camos, Callback=function(v) player:SetAttribute("PrimaryCamo",v) end})
+weapon:AddDropdown({Name="Secondary", Options=weapons, Callback=function(v) player:SetAttribute("Secondary",v) end})
+weapon:AddDropdown({Name="Secondary Camo", Options=camos, Callback=function(v) player:SetAttribute("SecondaryCamo",v) end})
 
--- Minimize
-local mini = Instance.new("TextButton", ScreenGui)
-mini.Text, mini.Visible = "≡", false
-mini.Size = UDim2.new(0, 30, 0, 30)
-mini.Position = UDim2.new(0, 10, 0, 10)
-mini.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-mini.MouseButton1Click:Connect(function()
-    Main.Visible, mini.Visible = true, false
-end)
+-- Settings
+settings:AddButton({Name="Destroy UI", Callback=function() OrionLib:Destroy() end})
 
-local minBtn = Instance.new("TextButton", Main)
-minBtn.Text = "_"
-minBtn.Size = UDim2.new(0, 20, 0, 20)
-minBtn.Position = UDim2.new(1, -25, 0, 5)
-minBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-minBtn.MouseButton1Click:Connect(function()
-    Main.Visible, mini.Visible = false, true
-end)
+OrionLib:Init()
