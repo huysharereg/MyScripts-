@@ -11,8 +11,12 @@ return function()
         KillAuraRange = 50
     }
 
-    -- UI
-    local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+    -- UI using PlayerGui
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "XenoUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
     local Main = Instance.new("Frame", ScreenGui)
     Main.Size = UDim2.new(0, 200, 0, 140)
     Main.Position = UDim2.new(0, 100, 0, 100)
@@ -83,7 +87,7 @@ return function()
         hl.OutlineColor = Color3.fromRGB(255, 255, 255)
         hl.FillTransparency = 0.5
         hl.OutlineTransparency = 0
-        hl.Parent = game.CoreGui
+        hl.Parent = ScreenGui
 
         local bb = Instance.new("BillboardGui")
         bb.Name = "NameTag"
