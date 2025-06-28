@@ -1,5 +1,3 @@
--- ✅ Gunfight Arena Script với UI nâng cao (Aimbot Settings, ESP Settings, Extras)
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -39,8 +37,8 @@ Frame.Draggable = true
 local Title = Instance.new("TextLabel", Frame)
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.Text = "Gunfight Arena HUB"
-Title.TextColor3 = Color3.new(1,1,1)
-Title.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
 Title.Font = Enum.Font.SourceSansBold
 Title.TextSize = 20
 
@@ -48,8 +46,8 @@ local Minimize = Instance.new("TextButton", Frame)
 Minimize.Size = UDim2.new(0, 30, 0, 30)
 Minimize.Position = UDim2.new(1, -30, 0, 0)
 Minimize.Text = "-"
-Minimize.TextColor3 = Color3.new(1,1,1)
-Minimize.BackgroundColor3 = Color3.new(0.3,0.3,0.3)
+Minimize.TextColor3 = Color3.new(1, 1, 1)
+Minimize.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
 
 local minimized = false
 Minimize.MouseButton1Click:Connect(function()
@@ -69,8 +67,8 @@ local function createToggle(name, y, settingKey)
     local Button = Instance.new("TextButton", Frame)
     Button.Position = UDim2.new(0, 10, 0, y)
     Button.Size = UDim2.new(0, 280, 0, 30)
-    Button.Text = name .. ": OFF"
-    Button.TextColor3 = Color3.new(1,1,1)
+    Button.Text = name .. ": " .. (Settings[settingKey] and "ON" or "OFF")
+    Button.TextColor3 = Color3.new(1, 1, 1)
     Button.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     Button.Font = Enum.Font.SourceSans
     Button.TextSize = 16
@@ -94,6 +92,8 @@ local function createInput(name, y, settingKey, defaultText)
         local val = tonumber(TextBox.Text)
         if val then
             Settings[settingKey] = val
+        else
+            TextBox.Text = tostring(Settings[settingKey]) -- Revert to valid value
         end
     end)
 end
@@ -110,7 +110,7 @@ local function createDropdown(name, y, settingKey, options)
     Box.FocusLost:Connect(function()
         local input = Box.Text:match("%w+")
         for _, opt in ipairs(options) do
-            if input:lower() == opt:lower() then
+            if input and input:lower() == opt:lower() then
                 Settings[settingKey] = opt
                 Box.Text = name .. ": " .. opt
                 break
@@ -126,91 +126,174 @@ createInput("Aimbot Speed", 145, "AimbotSpeed", tostring(Settings.AimbotSpeed))
 createDropdown("Aimbot Target", 180, "AimbotTarget", {"Head", "HumanoidRootPart", "LeftLeg"})
 createDropdown("ESP Mode", 215, "ESPMode", {"All", "Name", "Box", "Line"})
 createToggle("Draw Team", 250, "DrawTeam")
-createToggle("Low Gravity", 285, "LowGravity")
-createToggle("Fly", 320, "Fly")
+createToggle("Hitbox Expander", 285, "HitboxExpander")
+createToggle("Low Gravity", 320, "LowGravity")
+createToggle("Fly", 355, "Fly")
 
--- ✅ Get closest enemy only
+-- Get closest enemy
+local function isVisible(targetPos)
+    local success, result = pcall(function()
+        local ray = Ray.new(Camera.CFrame.Position, (targetPos - Camera.CFrame.Position).Unit * 1000)
+        local hit, pos = workspace:FindPartOnRay(ray, LocalPlayer.Character)
+        return hit == nil or hit:IsDescendantOf(targetPos.Parent)
+    end)
+    return success and result
+end
+
 local function GetClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team then
-            if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
-                local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
-                if visible then
-                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-                    if dist < shortest and dist <= Settings.AimbotFOV then
-                        closest, shortest = p, dist
+        if p ~= LocalPlayer then -- Removed team check for free-for-all compatibility
+            local success, result = pcall(function()
+                if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
+                    local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
+                    if visible and (not Settings.AimbotVisibility or isVisible(p.Character[Settings.AimbotTarget].Position)) then
+                        local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                        if dist < shortest and dist <= Settings.AimbotFOV then
+                            closest, shortest = p, dist
+                        end
                     end
                 end
-            end
+            end)
+            if not success then warn("Error in GetClosestEnemy: " .. result) end
         end
     end
     return closest
 end
 
+-- Aimbot and Fly
+local flySpeed = 50
+local bodyVelocity = Instance.new("BodyVelocity")
+bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+local bodyGyro = Instance.new("BodyGyro")
+bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+
 RunService.RenderStepped:Connect(function()
-    if Settings.Fly then
-        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").PlatformStand = true
-        LocalPlayer.Character:TranslateBy(Vector3.new(0, 0.5, 0))
+    -- Fly
+    local success, result = pcall(function()
+        if Settings.Fly and LocalPlayer.Character then
+            local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if humanoid and root then
+                humanoid.PlatformStand = true
+                bodyVelocity.Parent = root
+                bodyGyro.Parent = root
+                local camLook = Camera.CFrame.LookVector
+                local moveDir = Vector3.new(0, 0, 0)
+                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camLook end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camLook end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                bodyVelocity.Velocity = moveDir.Unit * flySpeed
+                bodyGyro.CFrame = Camera.CFrame
+            end
+        else
+            bodyVelocity.Parent = nil
+            bodyGyro.Parent = nil
+            if LocalPlayer.Character then
+                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").PlatformStand = false
+            end
+        end
+    end)
+    if not success then warn("Error in Fly: " .. result) end
+
+    -- Aimbot
+    if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
+        local success, result = pcall(function()
+            local target = GetClosestEnemy()
+            if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
+                local pos = target.Character[Settings.AimbotTarget].Position
+                if Settings.AimbotPrediction and target.Character:FindFirstChild("HumanoidRootPart") then
+                    pos = pos + target.Character.HumanoidRootPart.Velocity * 0.05
+                end
+                local screenPos = Camera:WorldToViewportPoint(pos)
+                local mousePos = Vector2.new(mouse.X, mouse.Y)
+                local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
+                mousemoverel(move.X, move.Y) -- Requires executor support
+            end
+        end)
+        if not success then warn("Error in Aimbot: " .. result) end
     end
 
-    if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
-        local target = GetClosestEnemy()
-        if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
-            local pos = target.Character[Settings.AimbotTarget].Position
-            if Settings.AimbotPrediction and target.Character:FindFirstChild("HumanoidRootPart") then
-                pos = pos + target.Character.HumanoidRootPart.Velocity * 0.05
+    -- Low Gravity
+    if Settings.LowGravity then
+        workspace.Gravity = 50
+    else
+        workspace.Gravity = 196.2
+    end
+
+    -- Hitbox Expander
+    for _, p in pairs(Players:GetPlayers()) do
+        local success, result = pcall(function()
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+                local head = p.Character.Head
+                if Settings.HitboxExpander then
+                    head.Size = Vector3.new(5, 5, 5)
+                    head.Transparency = 0.5
+                else
+                    head.Size = Vector3.new(2, 1, 1) -- Default head size
+                    head.Transparency = 0
+                end
             end
-            local screenPos = Camera:WorldToViewportPoint(pos)
-            local mousePos = Vector2.new(mouse.X, mouse.Y)
-            local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
-            mousemoverel(move.X, move.Y)
-        end
+        end)
+        if not success then warn("Error in Hitbox Expander: " .. result) end
     end
 end)
 
--- ESP Circle + Box
+-- ESP
 local espObjects = {}
 RunService.RenderStepped:Connect(function()
-    for _, v in pairs(espObjects) do v:Remove() end
+    for _, v in pairs(espObjects) do
+        local success, result = pcall(function()
+            v:Remove()
+        end)
+        if not success then warn("Error in ESP cleanup: " .. result) end
+    end
     table.clear(espObjects)
 
     if not Settings.ESP then return end
 
     for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) and plr.Character and plr.Character:FindFirstChild("Head") then
-            local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
-            if onScreen then
-                if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
-                    local nameDraw = Drawing.new("Text")
-                    nameDraw.Text = plr.Name
-                    nameDraw.Size = 14
-                    nameDraw.Center = true
-                    nameDraw.Outline = true
-                    nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
-                    nameDraw.Color = Color3.fromRGB(255, 255, 255)
-                    nameDraw.Visible = true
-                    table.insert(espObjects, nameDraw)
+        if plr ~= LocalPlayer then -- Removed team check
+            local success, result = pcall(function()
+                if plr.Character and plr.Character:FindFirstChild("Head") then
+                    local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
+                    if onScreen then
+                        if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
+                            local nameDraw = Drawing.new("Text")
+                            nameDraw.Text = plr.Name
+                            nameDraw.Size = 14
+                            nameDraw.Center = true
+                            nameDraw.Outline = true
+                            nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
+                            nameDraw.Color = Color3.fromRGB(255, 255, 255)
+                            nameDraw.Visible = true
+                            table.insert(espObjects, nameDraw)
+                        end
+                        if Settings.ESPMode == "All" or Settings.ESPMode == "Box" then
+                            local box = Drawing.new("Square")
+                            box.Size = Vector2.new(50, 60)
+                            box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
+                            box.Color = Color3.fromRGB(255, 0, 0)
+                            box.Thickness = 2
+                            box.Visible = true
+                            table.insert(espObjects, box)
+                        end
+                        if Settings.ESPMode == "All" or Settings.ESPMode == "Line" then
+                            local line = Drawing.new("Line")
+                            line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                            line.To = Vector2.new(headPos.X, headPos.Y)
+                            line.Color = Color3.fromRGB(0, 255, 0)
+                            line.Thickness = 1
+                            line.Visible = true
+                            table.insert(espObjects, line)
+                        end
+                    end
                 end
-                if Settings.ESPMode == "All" or Settings.ESPMode == "Box" then
-                    local box = Drawing.new("Square")
-                    box.Size = Vector2.new(50, 60)
-                    box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
-                    box.Color = Color3.fromRGB(255, 0, 0)
-                    box.Thickness = 2
-                    box.Visible = true
-                    table.insert(espObjects, box)
-                end
-                if Settings.ESPMode == "All" or Settings.ESPMode == "Line" then
-                    local line = Drawing.new("Line")
-                    line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-                    line.To = Vector2.new(headPos.X, headPos.Y)
-                    line.Color = Color3.fromRGB(0, 255, 0)
-                    line.Thickness = 1
-                    line.Visible = true
-                    table.insert(espObjects, line)
-                end
-            end
+            end)
+            if not success then warn("Error in ESP: " .. result) end
         end
     end
 end)
@@ -222,9 +305,13 @@ circle.Radius = Settings.AimbotFOV
 circle.Thickness = 1
 circle.Color = Color3.fromRGB(255, 255, 0)
 circle.Filled = false
-circle.Visible = true
+circle.Visible = Settings.Aimbot
 
 RunService.RenderStepped:Connect(function()
-    circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    circle.Radius = Settings.AimbotFOV
+    local success, result = pcall(function()
+        circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        circle.Radius = Settings.AimbotFOV
+        circle.Visible = Settings.Aimbot
+    end)
+    if not success then warn("Error in FOV Circle: " .. result) end
 end)
