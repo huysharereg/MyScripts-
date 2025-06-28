@@ -8,9 +8,9 @@ local mouse = LocalPlayer:GetMouse()
 local Settings = {
     Aimbot = false,
     AimbotAlways = false,
-    AimbotSpeed = 5, -- Tăng tốc độ mặc định để aim mượt hơn
+    AimbotSpeed = 10, -- Tăng tốc độ để aim mượt hơn
     AimbotPrediction = false,
-    AimbotFOV = 150,
+    AimbotFOV = 200, -- Tăng FOV mặc định
     AimbotTarget = "Head",
     AimbotVisibility = true,
 
@@ -123,18 +123,19 @@ createToggle("Aimbot", 40, "Aimbot")
 createToggle("Aimbot Always", 75, "AimbotAlways")
 createToggle("Aimbot Prediction", 110, "AimbotPrediction")
 createInput("Aimbot Speed", 145, "AimbotSpeed", tostring(Settings.AimbotSpeed))
-createDropdown("Aimbot Target", 180, "AimbotTarget", {"Head", "HumanoidRootPart", "LeftLeg"})
-createDropdown("ESP Mode", 215, "ESPMode", {"All", "Name", "Box", "Line"})
-createToggle("Draw Team", 250, "DrawTeam")
-createToggle("Hitbox Expander", 285, "HitboxExpander")
-createToggle("Low Gravity", 320, "LowGravity")
-createToggle("Fly", 355, "Fly")
+createInput("Aimbot FOV", 180, "AimbotFOV", tostring(Settings.AimbotFOV))
+createDropdown("Aimbot Target", 215, "AimbotTarget", {"Head", "HumanoidRootPart", "LeftLeg"})
+createDropdown("ESP Mode", 250, "ESPMode", {"All", "Name", "Box", "Line"})
+createToggle("Draw Team", 285, "DrawTeam")
+createToggle("Hitbox Expander", 320, "HitboxExpander")
+createToggle("Low Gravity", 355, "LowGravity")
+createToggle("Fly", 390, "Fly")
 
 -- Get closest enemy
 local function isVisible(targetPos, target)
     local success, result = pcall(function()
         local ray = Ray.new(Camera.CFrame.Position, (targetPos - Camera.CFrame.Position).Unit * 1000)
-        local hit, pos = workspace:FindPartOnRay(ray, LocalPlayer.Character)
+        local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character})
         return hit == nil or hit:IsDescendantOf(target)
     end)
     return success and result
@@ -143,7 +144,7 @@ end
 local function GetClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and (p.Team ~= LocalPlayer.Team or Settings.DrawTeam) then
+        if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team then -- Chỉ nhắm địch
             local success, result = pcall(function()
                 if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
                     local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
@@ -151,15 +152,17 @@ local function GetClosestEnemy()
                         local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
                         if dist < shortest and dist <= Settings.AimbotFOV then
                             closest, shortest = p, dist
-                            print("Found target: " .. p.Name .. ", Part: " .. Settings.AimbotTarget) -- Debug
+                            print("Found enemy: " .. p.Name .. ", Part: " .. Settings.AimbotTarget .. ", Dist: " .. dist) -- Debug
                         end
                     end
+                else
+                    print("No target part for " .. p.Name .. ": " .. Settings.AimbotTarget) -- Debug
                 end
             end)
             if not success then warn("Error in GetClosestEnemy: " .. result) end
         end
     end
-    if not closest then print("No valid target found") end
+    if not closest then print("No valid enemy found") end
     return closest
 end
 
@@ -213,11 +216,11 @@ RunService.RenderStepped:Connect(function()
                 local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
                 if onScreen then
                     local mousePos = Vector2.new(mouse.X, mouse.Y)
-                    local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
+                    local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) * (Settings.AimbotSpeed / 100)
                     mousemoverel(move.X, move.Y)
-                    print("Aiming at: " .. target.Name .. ", Position: " .. tostring(screenPos)) -- Debug
+                    print("Aiming at: " .. target.Name .. ", Part: " .. Settings.AimbotTarget .. ", ScreenPos: " .. tostring(screenPos)) -- Debug
                 else
-                    print("Target not on screen: " .. target.Name) -- Debug
+                    print("Enemy not on screen: " .. target.Name) -- Debug
                 end
             end
         end)
@@ -268,14 +271,16 @@ RunService.RenderStepped:Connect(function()
                 if plr.Character and plr.Character:FindFirstChild("Head") then
                     local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
                     if onScreen then
+                        local isEnemy = plr.Team ~= LocalPlayer.Team
+                        local color = isEnemy and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
                         if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
                             local nameDraw = Drawing.new("Text")
-                            nameDraw.Text = plr.Name
+                            nameDraw.Text = plr.Name .. (isEnemy and " [Enemy]" or " [Teammate]")
                             nameDraw.Size = 14
                             nameDraw.Center = true
                             nameDraw.Outline = true
                             nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
-                            nameDraw.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                            nameDraw.Color = color
                             nameDraw.Visible = true
                             table.insert(espObjects, nameDraw)
                         end
@@ -283,7 +288,7 @@ RunService.RenderStepped:Connect(function()
                             local box = Drawing.new("Square")
                             box.Size = Vector2.new(50, 60)
                             box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
-                            box.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                            box.Color = color
                             box.Thickness = 2
                             box.Visible = true
                             table.insert(espObjects, box)
@@ -292,7 +297,7 @@ RunService.RenderStepped:Connect(function()
                             local line = Drawing.new("Line")
                             line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
                             line.To = Vector2.new(headPos.X, headPos.Y)
-                            line.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                            line.Color = color
                             line.Thickness = 1
                             line.Visible = true
                             table.insert(espObjects, line)
