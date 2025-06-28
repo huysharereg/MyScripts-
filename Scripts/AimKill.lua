@@ -16,9 +16,7 @@ local Settings = {
     AimbotVisibility = true,
 
     ESP = false,
-    PlayerESP = true,
-    BotESP = false,
-    DrawNames = true,
+    ESPMode = "All", -- Name, Box, Line, All
     DrawTeam = false,
 
     HitboxExpander = false,
@@ -31,9 +29,11 @@ local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 ScreenGui.Name = "GunfightArenaUI"
 local Frame = Instance.new("Frame", ScreenGui)
 Frame.Position = UDim2.new(0.7, 0, 0.3, 0)
-Frame.Size = UDim2.new(0, 300, 0, 400)
+Frame.Size = UDim2.new(0, 300, 0, 450)
 Frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
 Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true
 
 local Title = Instance.new("TextLabel", Frame)
 Title.Size = UDim2.new(1, 0, 0, 30)
@@ -42,6 +42,26 @@ Title.TextColor3 = Color3.new(1,1,1)
 Title.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
 Title.Font = Enum.Font.SourceSansBold
 Title.TextSize = 20
+
+local Minimize = Instance.new("TextButton", Frame)
+Minimize.Size = UDim2.new(0, 30, 0, 30)
+Minimize.Position = UDim2.new(1, -30, 0, 0)
+Minimize.Text = "-"
+Minimize.TextColor3 = Color3.new(1,1,1)
+Minimize.BackgroundColor3 = Color3.new(0.3,0.3,0.3)
+
+local minimized = false
+Minimize.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    for _, v in ipairs(Frame:GetChildren()) do
+        if v:IsA("TextButton") or v:IsA("TextLabel") or v:IsA("TextBox") then
+            if v ~= Title and v ~= Minimize then
+                v.Visible = not minimized
+            end
+        end
+    end
+    Frame.Size = minimized and UDim2.new(0, 60, 0, 30) or UDim2.new(0, 300, 0, 450)
+end)
 
 local function createToggle(name, y, settingKey)
     local Button = Instance.new("TextButton", Frame)
@@ -52,121 +72,175 @@ local function createToggle(name, y, settingKey)
     Button.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     Button.Font = Enum.Font.SourceSans
     Button.TextSize = 16
+    Button.Visible = true
     Button.MouseButton1Click:Connect(function()
         Settings[settingKey] = not Settings[settingKey]
         Button.Text = name .. ": " .. (Settings[settingKey] and "ON" or "OFF")
     end)
 end
 
+local function createInput(name, y, settingKey, defaultText)
+    local TextBox = Instance.new("TextBox", Frame)
+    TextBox.Position = UDim2.new(0, 10, 0, y)
+    TextBox.Size = UDim2.new(0, 280, 0, 30)
+    TextBox.Text = defaultText or name
+    TextBox.TextColor3 = Color3.new(1, 1, 1)
+    TextBox.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    TextBox.Font = Enum.Font.SourceSans
+    TextBox.TextSize = 16
+    TextBox.FocusLost:Connect(function()
+        local val = tonumber(TextBox.Text)
+        if val then
+            Settings[settingKey] = val
+        end
+    end)
+end
+
+local function createDropdown(name, y, settingKey, options)
+    local Box = Instance.new("TextBox", Frame)
+    Box.Position = UDim2.new(0, 10, 0, y)
+    Box.Size = UDim2.new(0, 280, 0, 30)
+    Box.Text = name .. ": " .. Settings[settingKey]
+    Box.TextColor3 = Color3.new(1, 1, 1)
+    Box.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    Box.Font = Enum.Font.SourceSans
+    Box.TextSize = 16
+    Box.FocusLost:Connect(function()
+        local input = Box.Text:match("%w+")
+        for _, opt in ipairs(options) do
+            if input:lower() == opt:lower() then
+                Settings[settingKey] = opt
+                Box.Text = name .. ": " .. opt
+                break
+            end
+        end
+    end)
+end
+
 createToggle("Aimbot", 40, "Aimbot")
 createToggle("Aimbot Always", 75, "AimbotAlways")
 createToggle("Aimbot Prediction", 110, "AimbotPrediction")
-createToggle("ESP Player", 145, "PlayerESP")
-createToggle("Draw Names", 180, "DrawNames")
-createToggle("Draw Team", 215, "DrawTeam")
-createToggle("Low Gravity", 250, "LowGravity")
-createToggle("Fly", 285, "Fly")
+createInput("Aimbot Speed", 145, "AimbotSpeed", tostring(Settings.AimbotSpeed))
+createDropdown("Aimbot Target", 180, "AimbotTarget", {"Head", "HumanoidRootPart", "LeftLeg"})
+createDropdown("ESP Mode", 215, "ESPMode", {"All", "Name", "Box", "Line"})
+createToggle("Draw Team", 250, "DrawTeam")
+createToggle("Low Gravity", 285, "LowGravity")
+createToggle("Fly", 320, "Fly")
 
 -- FOV Circle
-local Circle = Drawing.new("Circle")
-Circle.Thickness = 2
-Circle.Filled = false
-Circle.Transparency = 1
-Circle.Color = Color3.fromRGB(255, 255, 0)
-Circle.Visible = true
-Circle.Radius = Settings.AimbotFOV
+local fovCircle = Drawing.new("Circle")
+fovCircle.Color = Color3.new(1, 1, 1)
+fovCircle.Thickness = 1
+fovCircle.NumSides = 100
+fovCircle.Filled = false
+fovCircle.Radius = Settings.AimbotFOV
+fovCircle.Visible = true
 
-local espCache = {}
+-- ESP Data
+local ESPObjects = {}
 
-local function getClosestEnemy()
-    local closest, shortest = nil, math.huge
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
-            local part = plr.Character[Settings.AimbotTarget]
-            local pos, visible = Camera:WorldToViewportPoint(part.Position)
-            if visible or not Settings.AimbotVisibility then
-                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-                if dist < shortest and dist < Settings.AimbotFOV then
-                    shortest = dist
-                    closest = plr
-                end
-            end
-        end
-    end
-    return closest
-end
-
+-- Fly
+local FlyVelocity = Vector3.zero
 RunService.RenderStepped:Connect(function()
-    -- FOV Circle Update
-    Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    Circle.Radius = Settings.AimbotFOV
-    Circle.Visible = Settings.Aimbot
+    fovCircle.Position = UIS:GetMouseLocation()
+    fovCircle.Radius = Settings.AimbotFOV
 
-    -- Aimbot
-    if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
-        local target = getClosestEnemy()
-        if target and target.Team ~= LocalPlayer.Team and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
-            local aimPos = target.Character[Settings.AimbotTarget].Position
-            if Settings.AimbotPrediction then
-                local velocity = target.Character:FindFirstChild("HumanoidRootPart") and target.Character.HumanoidRootPart.Velocity or Vector3.new()
-                aimPos = aimPos + velocity * 0.1
-            end
-            local dir = (aimPos - Camera.CFrame.Position).Unit
-            local newCF = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + dir)
-            Camera.CFrame = Camera.CFrame:Lerp(newCF, Settings.AimbotSpeed * 0.1)
-        end
+    if Settings.LowGravity and workspace:FindFirstChild("Gravity") then
+        workspace.Gravity = 20
+    end
+
+    if Settings.Fly and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local HRP = LocalPlayer.Character.HumanoidRootPart
+        HRP.Velocity = Vector3.new(0, 50, 0)
     end
 
     -- ESP
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local isEnemy = (plr.Team ~= LocalPlayer.Team)
-            if (Settings.PlayerESP and isEnemy) or (Settings.DrawTeam and not isEnemy) then
-                if not espCache[plr] then
-                    espCache[plr] = {
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+            local teamCheck = (plr.Team ~= LocalPlayer.Team or Settings.DrawTeam)
+            if teamCheck then
+                local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
+                if not ESPObjects[plr] then
+                    ESPObjects[plr] = {
                         Name = Drawing.new("Text"),
+                        Line = Drawing.new("Line"),
                         Box = Drawing.new("Square")
                     }
-                    espCache[plr].Name.Size = 13
-                    espCache[plr].Name.Center = true
-                    espCache[plr].Name.Font = 2
-                    espCache[plr].Name.Color = Color3.new(1, 1, 1)
-                    espCache[plr].Name.Outline = true
-                    espCache[plr].Box.Color = Color3.fromRGB(0,255,0)
-                    espCache[plr].Box.Thickness = 1
-                    espCache[plr].Box.Filled = false
+                    ESPObjects[plr].Name.Size = 14
+                    ESPObjects[plr].Name.Center = true
+                    ESPObjects[plr].Name.Outline = true
+                    ESPObjects[plr].Box.Thickness = 1
+                    ESPObjects[plr].Box.Filled = false
+                    ESPObjects[plr].Line.Thickness = 1
                 end
-                local head = plr.Character.Head
-                local root = plr.Character.HumanoidRootPart
-                local pos, visible = Camera:WorldToViewportPoint(head.Position)
-                if visible and Settings.ESP then
-                    espCache[plr].Name.Text = plr.Name
-                    espCache[plr].Name.Position = Vector2.new(pos.X, pos.Y - 15)
-                    espCache[plr].Name.Visible = Settings.DrawNames
+                local esp = ESPObjects[plr]
+                local root = plr.Character:FindFirstChild("HumanoidRootPart")
+                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - root.Position).Magnitude
 
-                    local size = Vector2.new(50, 100) / (root.Position - Camera.CFrame.Position).Magnitude * 5
-                    local screenPos = Camera:WorldToViewportPoint(root.Position)
-                    espCache[plr].Box.Size = size
-                    espCache[plr].Box.Position = Vector2.new(screenPos.X - size.X/2, screenPos.Y - size.Y/2)
-                    espCache[plr].Box.Visible = true
+                -- Name
+                if Settings.ESP and (Settings.ESPMode == "Name" or Settings.ESPMode == "All") and onScreen then
+                    esp.Name.Text = string.format("%s [%dm]", plr.Name, math.floor(dist))
+                    esp.Name.Position = Vector2.new(headPos.X, headPos.Y - 20)
+                    esp.Name.Visible = true
                 else
-                    espCache[plr].Name.Visible = false
-                    espCache[plr].Box.Visible = false
+                    esp.Name.Visible = false
                 end
-            elseif espCache[plr] then
-                espCache[plr].Name.Visible = false
-                espCache[plr].Box.Visible = false
+
+                -- Box
+                if Settings.ESP and (Settings.ESPMode == "Box" or Settings.ESPMode == "All") and onScreen then
+                    esp.Box.Position = Vector2.new(headPos.X - 25, headPos.Y - 50)
+                    esp.Box.Size = Vector2.new(50, 100)
+                    esp.Box.Visible = true
+                else
+                    esp.Box.Visible = false
+                end
+
+                -- Line
+                if Settings.ESP and (Settings.ESPMode == "Line" or Settings.ESPMode == "All") and onScreen then
+                    esp.Line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                    esp.Line.To = Vector2.new(headPos.X, headPos.Y)
+                    esp.Line.Visible = true
+                else
+                    esp.Line.Visible = false
+                end
+            end
+        elseif ESPObjects[plr] then
+            for _, d in pairs(ESPObjects[plr]) do
+                d.Visible = false
             end
         end
     end
+end)
 
-    -- Gravity
-    workspace.Gravity = Settings.LowGravity and 50 or 196.2
+-- Aimbot (mouse lock on left click)
+UIS.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and Settings.Aimbot then
+        local closest = nil
+        local minDist = Settings.AimbotFOV
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
+                local pos, onScreen = Camera:WorldToViewportPoint(plr.Character[Settings.AimbotTarget].Position)
+                if onScreen then
+                    local dist = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        closest = plr
+                    end
+                end
+            end
+        end
 
-    -- Fly
-    if Settings.Fly then
-        LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 50, 0)
+        if closest then
+            local targetPart = closest.Character[Settings.AimbotTarget]
+            local dir = (targetPart.Position - Camera.CFrame.Position).Unit
+            local newLook = CFrame.lookAt(Camera.CFrame.Position, targetPart.Position)
+            local step = Settings.AimbotAlways and 1 or Settings.AimbotSpeed/10
+
+            for i = 1, math.floor(10 * step) do
+                Camera.CFrame = Camera.CFrame:Lerp(newLook, step)
+                task.wait()
+            end
+        end
     end
 end)
 
-print("✅ Gunfight Arena Script UI loaded")
