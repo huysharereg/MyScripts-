@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local mouse = LocalPlayer:GetMouse()
 
 local Settings = {
     Aimbot = false,
@@ -15,8 +16,8 @@ local Settings = {
     AimbotTarget = "Head",
     AimbotVisibility = true,
 
-    ESP = false,
-    ESPMode = "All", -- Name, Box, Line, All
+    ESP = true,
+    ESPMode = "All",
     DrawTeam = false,
 
     HitboxExpander = false,
@@ -24,7 +25,7 @@ local Settings = {
     Fly = false
 }
 
--- UI Setup
+-- UI Setup (giữ nguyên như cũ)
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 ScreenGui.Name = "GunfightArenaUI"
 local Frame = Instance.new("Frame", ScreenGui)
@@ -54,7 +55,7 @@ local minimized = false
 Minimize.MouseButton1Click:Connect(function()
     minimized = not minimized
     for _, v in ipairs(Frame:GetChildren()) do
-        if v:IsA("TextButton") or v:IsA("TextLabel") or v:IsA("TextBox") or v:IsA("DropdownMenu") then
+        if v:IsA("TextButton") or v:IsA("TextLabel") or v:IsA("TextBox") then
             if v ~= Title and v ~= Minimize then
                 v.Visible = not minimized
             end
@@ -63,6 +64,7 @@ Minimize.MouseButton1Click:Connect(function()
     Frame.Size = minimized and UDim2.new(0, 60, 0, 30) or UDim2.new(0, 300, 0, 450)
 end)
 
+-- UI Elements
 local function createToggle(name, y, settingKey)
     local Button = Instance.new("TextButton", Frame)
     Button.Position = UDim2.new(0, 10, 0, y)
@@ -97,23 +99,23 @@ local function createInput(name, y, settingKey, defaultText)
 end
 
 local function createDropdown(name, y, settingKey, options)
-    local Dropdown = Instance.new("TextButton", Frame)
-    Dropdown.Position = UDim2.new(0, 10, 0, y)
-    Dropdown.Size = UDim2.new(0, 280, 0, 30)
-    Dropdown.Text = name .. ": " .. Settings[settingKey]
-    Dropdown.TextColor3 = Color3.new(1, 1, 1)
-    Dropdown.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    Dropdown.Font = Enum.Font.SourceSans
-    Dropdown.TextSize = 16
-
-    Dropdown.MouseButton1Click:Connect(function()
-        local currentIndex = table.find(options, Settings[settingKey]) or 1
-        local nextIndex = currentIndex + 1
-        if nextIndex > #options then
-            nextIndex = 1
+    local Box = Instance.new("TextBox", Frame)
+    Box.Position = UDim2.new(0, 10, 0, y)
+    Box.Size = UDim2.new(0, 280, 0, 30)
+    Box.Text = name .. ": " .. Settings[settingKey]
+    Box.TextColor3 = Color3.new(1, 1, 1)
+    Box.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    Box.Font = Enum.Font.SourceSans
+    Box.TextSize = 16
+    Box.FocusLost:Connect(function()
+        local input = Box.Text:match("%w+")
+        for _, opt in ipairs(options) do
+            if input:lower() == opt:lower() then
+                Settings[settingKey] = opt
+                Box.Text = name .. ": " .. opt
+                break
+            end
         end
-        Settings[settingKey] = options[nextIndex]
-        Dropdown.Text = name .. ": " .. Settings[settingKey]
     end)
 end
 
@@ -127,47 +129,103 @@ createToggle("Draw Team", 250, "DrawTeam")
 createToggle("Low Gravity", 285, "LowGravity")
 createToggle("Fly", 320, "Fly")
 
--- FOV Circle Drawing
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Color = Color3.fromRGB(0,255,0)
-FOVCircle.Thickness = 1.5
-FOVCircle.Radius = Settings.AimbotFOV
-FOVCircle.NumSides = 64
-FOVCircle.Transparency = 0.75
-FOVCircle.Filled = false
-
-RunService.RenderStepped:Connect(function()
-    FOVCircle.Position = UIS:GetMouseLocation()
-    FOVCircle.Visible = Settings.Aimbot
-    FOVCircle.Radius = Settings.AimbotFOV
-end)
-
--- Aimbot logic with mouse control
-RunService.RenderStepped:Connect(function()
-    if Settings.Aimbot and (UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) or Settings.AimbotAlways) then
-        local closest, shortest = nil, math.huge
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(Settings.AimbotTarget) then
-                if Settings.DrawTeam == false and player.Team == LocalPlayer.Team then continue end
-                local part = player.Character[Settings.AimbotTarget]
-                local screenPos, visible = Camera:WorldToViewportPoint(part.Position)
+-- Get closest enemy
+local function GetClosestEnemy()
+    local closest, shortest = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and (Settings.DrawTeam == false and p.Team ~= LocalPlayer.Team) then
+            if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
+                local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
                 if visible then
-                    local mousePos = UIS:GetMouseLocation()
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if dist <= Settings.AimbotFOV and dist < shortest then
-                        shortest = dist
-                        closest = part
+                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                    if dist < shortest and dist <= Settings.AimbotFOV then
+                        closest, shortest = p, dist
                     end
                 end
             end
         end
-        if closest then
-            local mouse = game:GetService("VirtualInputManager")
-            local pos = Camera:WorldToViewportPoint(closest.Position)
-            local move = Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()
-            mouse:SendMouseMoveRelative(math.floor(move.X / Settings.AimbotSpeed), math.floor(move.Y / Settings.AimbotSpeed))
+    end
+    return closest
+end
+
+-- Aimbot Logic
+RunService.RenderStepped:Connect(function()
+    if Settings.Fly then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").PlatformStand = true
+        LocalPlayer.Character:TranslateBy(Vector3.new(0, 0.5, 0))
+    end
+
+    if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
+        local target = GetClosestEnemy()
+        if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
+            local pos = target.Character[Settings.AimbotTarget].Position
+            if Settings.AimbotPrediction and target.Character:FindFirstChild("HumanoidRootPart") then
+                pos = pos + target.Character.HumanoidRootPart.Velocity * 0.05
+            end
+            local screenPos = Camera:WorldToViewportPoint(pos)
+            local mousePos = Vector2.new(mouse.X, mouse.Y)
+            local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
+            mousemoverel(move.X, move.Y)
         end
     end
 end)
 
--- Bạn có thể tiếp tục bổ sung ESP Box/Name/Line bằng Drawing API tại đây
+-- ESP Circle + Box
+local espObjects = {}
+RunService.RenderStepped:Connect(function()
+    for _, v in pairs(espObjects) do v:Remove() end
+    table.clear(espObjects)
+
+    if not Settings.ESP then return end
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) and plr.Character and plr.Character:FindFirstChild("Head") then
+            local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
+            if onScreen then
+                if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
+                    local nameDraw = Drawing.new("Text")
+                    nameDraw.Text = plr.Name
+                    nameDraw.Size = 14
+                    nameDraw.Center = true
+                    nameDraw.Outline = true
+                    nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
+                    nameDraw.Color = Color3.fromRGB(255, 255, 255)
+                    nameDraw.Visible = true
+                    table.insert(espObjects, nameDraw)
+                end
+                if Settings.ESPMode == "All" or Settings.ESPMode == "Box" then
+                    local box = Drawing.new("Square")
+                    box.Size = Vector2.new(50, 60)
+                    box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
+                    box.Color = Color3.fromRGB(255, 0, 0)
+                    box.Thickness = 2
+                    box.Visible = true
+                    table.insert(espObjects, box)
+                end
+                if Settings.ESPMode == "All" or Settings.ESPMode == "Line" then
+                    local line = Drawing.new("Line")
+                    line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                    line.To = Vector2.new(headPos.X, headPos.Y)
+                    line.Color = Color3.fromRGB(0, 255, 0)
+                    line.Thickness = 1
+                    line.Visible = true
+                    table.insert(espObjects, line)
+                end
+            end
+        end
+    end
+end)
+
+-- FOV Circle
+local circle = Drawing.new("Circle")
+circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+circle.Radius = Settings.AimbotFOV
+circle.Thickness = 1
+circle.Color = Color3.fromRGB(255, 255, 0)
+circle.Filled = false
+circle.Visible = true
+
+RunService.RenderStepped:Connect(function()
+    circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    circle.Radius = Settings.AimbotFOV
+end)
