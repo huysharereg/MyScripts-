@@ -81,7 +81,7 @@ local espCache = {}
 local function getClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
+        if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
             local part = plr.Character[Settings.AimbotTarget]
             local pos, visible = Camera:WorldToViewportPoint(part.Position)
             if visible or not Settings.AimbotVisibility then
@@ -105,9 +105,8 @@ RunService.RenderStepped:Connect(function()
     -- Aimbot
     if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
         local target = getClosestEnemy()
-        if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
-            local aimPart = target.Character[Settings.AimbotTarget]
-            local aimPos = aimPart.Position
+        if target and target.Team ~= LocalPlayer.Team and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
+            local aimPos = target.Character[Settings.AimbotTarget].Position
             if Settings.AimbotPrediction then
                 local velocity = target.Character:FindFirstChild("HumanoidRootPart") and target.Character.HumanoidRootPart.Velocity or Vector3.new()
                 aimPos = aimPos + velocity * 0.1
@@ -140,7 +139,7 @@ RunService.RenderStepped:Connect(function()
                 local head = plr.Character.Head
                 local root = plr.Character.HumanoidRootPart
                 local pos, visible = Camera:WorldToViewportPoint(head.Position)
-                if visible and Settings.PlayerESP then
+                if visible and Settings.ESP then
                     espCache[plr].Name.Text = plr.Name
                     espCache[plr].Name.Position = Vector2.new(pos.X, pos.Y - 15)
                     espCache[plr].Name.Visible = Settings.DrawNames
@@ -165,7 +164,7 @@ RunService.RenderStepped:Connect(function()
     workspace.Gravity = Settings.LowGravity and 50 or 196.2
 
     -- Fly
-    if Settings.Fly and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+    if Settings.Fly then
         LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 50, 0)
     end
 end)
