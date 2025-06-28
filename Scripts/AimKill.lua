@@ -8,9 +8,9 @@ local mouse = LocalPlayer:GetMouse()
 local Settings = {
     Aimbot = false,
     AimbotAlways = false,
-    AimbotSpeed = 10, -- Tăng tốc độ để aim mượt hơn
+    AimbotSpeed = 8, -- Giảm tốc độ để aim mượt hơn
     AimbotPrediction = false,
-    AimbotFOV = 200, -- Tăng FOV mặc định
+    AimbotFOV = 300, -- Tăng FOV để dễ nhắm
     AimbotTarget = "Head",
     AimbotVisibility = true,
 
@@ -146,17 +146,20 @@ local function GetClosestEnemy()
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team then -- Chỉ nhắm địch
             local success, result = pcall(function()
-                if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
-                    local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
-                    if visible and (not Settings.AimbotVisibility or isVisible(p.Character[Settings.AimbotTarget].Position, p.Character)) then
-                        local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-                        if dist < shortest and dist <= Settings.AimbotFOV then
-                            closest, shortest = p, dist
-                            print("Found enemy: " .. p.Name .. ", Part: " .. Settings.AimbotTarget .. ", Dist: " .. dist) -- Debug
-                        end
+                local targetPart = p.Character and p.Character:FindFirstChild(Settings.AimbotTarget)
+                if not targetPart then
+                    print("No target part '" .. Settings.AimbotTarget .. "' for " .. p.Name)
+                    return
+                end
+                local pos, visible = Camera:WorldToViewportPoint(targetPart.Position)
+                if visible and (not Settings.AimbotVisibility or isVisible(targetPart.Position, p.Character)) then
+                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                    if dist < shortest and dist <= Settings.AimbotFOV then
+                        closest, shortest = p, dist
+                        print("Found enemy: " .. p.Name .. ", Part: " .. Settings.AimbotTarget .. ", Dist: " .. dist .. ", Team: " .. tostring(p.Team))
                     end
                 else
-                    print("No target part for " .. p.Name .. ": " .. Settings.AimbotTarget) -- Debug
+                    print("Enemy not visible: " .. p.Name .. ", Visible: " .. tostring(visible))
                 end
             end)
             if not success then warn("Error in GetClosestEnemy: " .. result) end
@@ -217,10 +220,16 @@ RunService.RenderStepped:Connect(function()
                 if onScreen then
                     local mousePos = Vector2.new(mouse.X, mouse.Y)
                     local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) * (Settings.AimbotSpeed / 100)
-                    mousemoverel(move.X, move.Y)
-                    print("Aiming at: " .. target.Name .. ", Part: " .. Settings.AimbotTarget .. ", ScreenPos: " .. tostring(screenPos)) -- Debug
+                    local success, err = pcall(function()
+                        mousemoverel(move.X, move.Y)
+                    end)
+                    if not success then
+                        warn("mousemoverel failed: " .. err)
+                    else
+                        print("Aiming at: " .. target.Name .. ", Part: " .. Settings.AimbotTarget .. ", ScreenPos: " .. tostring(screenPos))
+                    end
                 else
-                    print("Enemy not on screen: " .. target.Name) -- Debug
+                    print("Enemy not on screen: " .. target.Name)
                 end
             end
         end)
@@ -266,41 +275,43 @@ RunService.RenderStepped:Connect(function()
     if not Settings.ESP then return end
 
     for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) then
+        if plr ~= LocalPlayer and (Settings.DrawTeam or plrELECTIONS
             local success, result = pcall(function()
                 if plr.Character and plr.Character:FindFirstChild("Head") then
                     local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
                     if onScreen then
                         local isEnemy = plr.Team ~= LocalPlayer.Team
-                        local color = isEnemy and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
-                        if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
-                            local nameDraw = Drawing.new("Text")
-                            nameDraw.Text = plr.Name .. (isEnemy and " [Enemy]" or " [Teammate]")
-                            nameDraw.Size = 14
-                            nameDraw.Center = true
-                            nameDraw.Outline = true
-                            nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
-                            nameDraw.Color = color
-                            nameDraw.Visible = true
-                            table.insert(espObjects, nameDraw)
-                        end
-                        if Settings.ESPMode == "All" or Settings.ESPMode == "Box" then
-                            local box = Drawing.new("Square")
-                            box.Size = Vector2.new(50, 60)
-                            box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
-                            box.Color = color
-                            box.Thickness = 2
-                            box.Visible = true
-                            table.insert(espObjects, box)
-                        end
-                        if Settings.ESPMode == "All" or Settings.ESPMode == "Line" then
-                            local line = Drawing.new("Line")
-                            line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-                            line.To = Vector2.new(headPos.X, headPos.Y)
-                            line.Color = color
-                            line.Thickness = 1
-                            line.Visible = true
-                            table.insert(espObjects, line)
+                        if isEnemy or Settings.DrawTeam then
+                            local color = isEnemy and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+                            if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
+                                local nameDraw = Drawing.new("Text")
+                                nameDraw.Text = plr.Name .. (isEnemy and " [Enemy]" or " [Teammate]")
+                                nameDraw.Size = 14
+                                nameDraw.Center = true
+                                nameDraw.Outline = true
+                                nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
+                                nameDraw.Color = color
+                                nameDraw.Visible = true
+                                table.insert(espObjects, nameDraw)
+                            end
+                            if Settings.ESPMode == "All" or Settings.ESPMode == "Box" then
+                                local box = Drawing.new("Square")
+                                box.Size = Vector2.new(50, 60)
+                                box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
+                                box.Color = color
+                                box.Thickness = 2
+                                box.Visible = true
+                                table.insert(espObjects, box)
+                            end
+                            if Settings.ESPMode == "All" or Settings.ESPMode == "Line" then
+                                local line = Drawing.new("Line")
+                                line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                                line.To = Vector2.new(headPos.X, headPos.Y)
+                                line.Color = color
+                                line.Thickness = 1
+                                line.Visible = true
+                                table.insert(espObjects, line)
+                            end
                         end
                     end
                 end
