@@ -8,7 +8,7 @@ local mouse = LocalPlayer:GetMouse()
 local Settings = {
     Aimbot = false,
     AimbotAlways = false,
-    AimbotSpeed = 1,
+    AimbotSpeed = 5, -- Tăng tốc độ mặc định để aim mượt hơn
     AimbotPrediction = false,
     AimbotFOV = 150,
     AimbotTarget = "Head",
@@ -93,7 +93,7 @@ local function createInput(name, y, settingKey, defaultText)
         if val then
             Settings[settingKey] = val
         else
-            TextBox.Text = tostring(Settings[settingKey]) -- Revert to valid value
+            TextBox.Text = tostring(Settings[settingKey])
         end
     end)
 end
@@ -131,11 +131,11 @@ createToggle("Low Gravity", 320, "LowGravity")
 createToggle("Fly", 355, "Fly")
 
 -- Get closest enemy
-local function isVisible(targetPos)
+local function isVisible(targetPos, target)
     local success, result = pcall(function()
         local ray = Ray.new(Camera.CFrame.Position, (targetPos - Camera.CFrame.Position).Unit * 1000)
         local hit, pos = workspace:FindPartOnRay(ray, LocalPlayer.Character)
-        return hit == nil or hit:IsDescendantOf(targetPos.Parent)
+        return hit == nil or hit:IsDescendantOf(target)
     end)
     return success and result
 end
@@ -143,14 +143,15 @@ end
 local function GetClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then -- Removed team check for free-for-all compatibility
+        if p ~= LocalPlayer and (p.Team ~= LocalPlayer.Team or Settings.DrawTeam) then
             local success, result = pcall(function()
                 if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
                     local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
-                    if visible and (not Settings.AimbotVisibility or isVisible(p.Character[Settings.AimbotTarget].Position)) then
+                    if visible and (not Settings.AimbotVisibility or isVisible(p.Character[Settings.AimbotTarget].Position, p.Character)) then
                         local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
                         if dist < shortest and dist <= Settings.AimbotFOV then
                             closest, shortest = p, dist
+                            print("Found target: " .. p.Name .. ", Part: " .. Settings.AimbotTarget) -- Debug
                         end
                     end
                 end
@@ -158,6 +159,7 @@ local function GetClosestEnemy()
             if not success then warn("Error in GetClosestEnemy: " .. result) end
         end
     end
+    if not closest then print("No valid target found") end
     return closest
 end
 
@@ -208,10 +210,15 @@ RunService.RenderStepped:Connect(function()
                 if Settings.AimbotPrediction and target.Character:FindFirstChild("HumanoidRootPart") then
                     pos = pos + target.Character.HumanoidRootPart.Velocity * 0.05
                 end
-                local screenPos = Camera:WorldToViewportPoint(pos)
-                local mousePos = Vector2.new(mouse.X, mouse.Y)
-                local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
-                mousemoverel(move.X, move.Y) -- Requires executor support
+                local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+                if onScreen then
+                    local mousePos = Vector2.new(mouse.X, mouse.Y)
+                    local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
+                    mousemoverel(move.X, move.Y)
+                    print("Aiming at: " .. target.Name .. ", Position: " .. tostring(screenPos)) -- Debug
+                else
+                    print("Target not on screen: " .. target.Name) -- Debug
+                end
             end
         end)
         if not success then warn("Error in Aimbot: " .. result) end
@@ -233,7 +240,7 @@ RunService.RenderStepped:Connect(function()
                     head.Size = Vector3.new(5, 5, 5)
                     head.Transparency = 0.5
                 else
-                    head.Size = Vector3.new(2, 1, 1) -- Default head size
+                    head.Size = Vector3.new(2, 1, 1)
                     head.Transparency = 0
                 end
             end
@@ -256,7 +263,7 @@ RunService.RenderStepped:Connect(function()
     if not Settings.ESP then return end
 
     for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then -- Removed team check
+        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) then
             local success, result = pcall(function()
                 if plr.Character and plr.Character:FindFirstChild("Head") then
                     local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
@@ -268,7 +275,7 @@ RunService.RenderStepped:Connect(function()
                             nameDraw.Center = true
                             nameDraw.Outline = true
                             nameDraw.Position = Vector2.new(headPos.X, headPos.Y - 25)
-                            nameDraw.Color = Color3.fromRGB(255, 255, 255)
+                            nameDraw.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
                             nameDraw.Visible = true
                             table.insert(espObjects, nameDraw)
                         end
@@ -276,7 +283,7 @@ RunService.RenderStepped:Connect(function()
                             local box = Drawing.new("Square")
                             box.Size = Vector2.new(50, 60)
                             box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
-                            box.Color = Color3.fromRGB(255, 0, 0)
+                            box.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
                             box.Thickness = 2
                             box.Visible = true
                             table.insert(espObjects, box)
@@ -285,7 +292,7 @@ RunService.RenderStepped:Connect(function()
                             local line = Drawing.new("Line")
                             line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
                             line.To = Vector2.new(headPos.X, headPos.Y)
-                            line.Color = Color3.fromRGB(0, 255, 0)
+                            line.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
                             line.Thickness = 1
                             line.Visible = true
                             table.insert(espObjects, line)
