@@ -1,4 +1,4 @@
--- ✅ Gunfight Arena Script với UI đơn giản (Aimbot Settings, ESP Settings, Extras)
+-- ✅ Gunfight Arena Script với UI nâng cao (Aimbot Settings, ESP Settings, Extras)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,9 +16,9 @@ local Settings = {
     AimbotVisibility = true,
 
     ESP = false,
-    PlayerESP = false,
+    PlayerESP = true,
     BotESP = false,
-    DrawNames = false,
+    DrawNames = true,
     DrawTeam = false,
 
     HitboxExpander = false,
@@ -26,40 +26,46 @@ local Settings = {
     Fly = false
 }
 
--- UI Menu đơn giản bằng nút bấm
-local function createToggle(text, default, callback)
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(0, 200, 0, 25)
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.Font = Enum.Font.SourceSans
-    button.TextSize = 18
-    button.Text = text .. ": OFF"
-    button.Parent = screenGui
-    local state = default
-    button.MouseButton1Click:Connect(function()
-        state = not state
-        button.Text = text .. ": " .. (state and "ON" or "OFF")
-        callback(state)
+-- UI Setup
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "GunfightArenaUI"
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Position = UDim2.new(0.7, 0, 0.3, 0)
+Frame.Size = UDim2.new(0, 300, 0, 400)
+Frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+Frame.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel", Frame)
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Text = "Gunfight Arena HUB"
+Title.TextColor3 = Color3.new(1,1,1)
+Title.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 20
+
+local function createToggle(name, y, settingKey)
+    local Button = Instance.new("TextButton", Frame)
+    Button.Position = UDim2.new(0, 10, 0, y)
+    Button.Size = UDim2.new(0, 280, 0, 30)
+    Button.Text = name .. ": OFF"
+    Button.TextColor3 = Color3.new(1,1,1)
+    Button.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    Button.Font = Enum.Font.SourceSans
+    Button.TextSize = 16
+    Button.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        Button.Text = name .. ": " .. (Settings[settingKey] and "ON" or "OFF")
     end)
 end
 
-local screenGui = Instance.new("ScreenGui", game.CoreGui)
-screenGui.Name = "SimpleHackMenu"
-screenGui.ResetOnSpawn = false
-
-local frame = Instance.new("Frame", screenGui)
-frame.Size = UDim2.new(0, 220, 0, 300)
-frame.Position = UDim2.new(0, 20, 0.5, -150)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-
-local layout = Instance.new("UIListLayout", frame)
-layout.Padding = UDim.new(0, 5)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-
-createToggle("Aimbot", Settings.Aimbot, function(v) Settings.Aimbot = v end)
-createToggle("ESP", Settings.ESP, function(v) Settings.ESP = v end)
-createToggle("Low Gravity", Settings.LowGravity, function(v) Settings.LowGravity = v end)
+createToggle("Aimbot", 40, "Aimbot")
+createToggle("Aimbot Always", 75, "AimbotAlways")
+createToggle("Aimbot Prediction", 110, "AimbotPrediction")
+createToggle("ESP Player", 145, "PlayerESP")
+createToggle("Draw Names", 180, "DrawNames")
+createToggle("Draw Team", 215, "DrawTeam")
+createToggle("Low Gravity", 250, "LowGravity")
+createToggle("Fly", 285, "Fly")
 
 -- FOV Circle
 local Circle = Drawing.new("Circle")
@@ -90,27 +96,6 @@ local function getClosestEnemy()
     return closest
 end
 
-local function createESP(plr)
-    if not espCache[plr] then
-        espCache[plr] = {
-            Box = Drawing.new("Square"),
-            Name = Drawing.new("Text"),
-            Line = Drawing.new("Line"),
-            Distance = Drawing.new("Text")
-        }
-        for _, obj in pairs(espCache[plr]) do
-            obj.Visible = false
-            obj.Outline = true
-            obj.Transparency = 1
-            if obj:IsA("Text") then
-                obj.Size = 13
-                obj.Center = true
-                obj.Font = 2
-            end
-        end
-    end
-end
-
 RunService.RenderStepped:Connect(function()
     Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
     Circle.Radius = Settings.AimbotFOV
@@ -121,7 +106,7 @@ RunService.RenderStepped:Connect(function()
         if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
             local aimPos = target.Character[Settings.AimbotTarget].Position
             if Settings.AimbotPrediction then
-                local velocity = target.Character["HumanoidRootPart"] and target.Character.HumanoidRootPart.Velocity or Vector3.new()
+                local velocity = target.Character:FindFirstChild("HumanoidRootPart") and target.Character.HumanoidRootPart.Velocity or Vector3.new()
                 aimPos = aimPos + velocity * 0.1
             end
             local dir = (aimPos - Camera.CFrame.Position).Unit
@@ -134,54 +119,30 @@ RunService.RenderStepped:Connect(function()
         if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") and plr.Character:FindFirstChild("HumanoidRootPart") then
             local isEnemy = (plr.Team ~= LocalPlayer.Team)
             if (Settings.PlayerESP and isEnemy) or (Settings.DrawTeam and not isEnemy) then
-                createESP(plr)
+                if not espCache[plr] then
+                    espCache[plr] = Drawing.new("Text")
+                    espCache[plr].Size = 13
+                    espCache[plr].Center = true
+                    espCache[plr].Font = 2
+                    espCache[plr].Color = Color3.new(1, 1, 1)
+                    espCache[plr].Outline = true
+                end
                 local head = plr.Character.Head
-                local root = plr.Character.HumanoidRootPart
                 local pos, visible = Camera:WorldToViewportPoint(head.Position)
                 if visible and Settings.ESP then
-                    local dist = (Camera.CFrame.Position - root.Position).Magnitude
-                    local size = Vector2.new(50, 100) / dist * 20
-
-                    local box = espCache[plr].Box
-                    box.Size = size
-                    box.Position = Vector2.new(pos.X - size.X/2, pos.Y - size.Y/2)
-                    box.Color = isEnemy and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
-                    box.Visible = true
-
-                    if Settings.DrawNames then
-                        local name = espCache[plr].Name
-                        name.Text = plr.Name
-                        name.Position = Vector2.new(pos.X, pos.Y - size.Y/2 - 15)
-                        name.Color = Color3.fromRGB(0, 255, 255)
-                        name.Visible = true
-                    end
-
-                    local line = espCache[plr].Line
-                    line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-                    line.To = Vector2.new(pos.X, pos.Y)
-                    line.Color = Color3.fromRGB(255, 255, 255)
-                    line.Thickness = 1
-                    line.Visible = true
-
-                    local disText = espCache[plr].Distance
-                    disText.Text = string.format("%.0fm", dist)
-                    disText.Position = Vector2.new(pos.X, pos.Y + size.Y/2 + 10)
-                    disText.Color = Color3.fromRGB(0, 255, 0)
-                    disText.Visible = true
+                    espCache[plr].Text = plr.Name
+                    espCache[plr].Position = Vector2.new(pos.X, pos.Y - 15)
+                    espCache[plr].Visible = true
                 else
-                    for _, obj in pairs(espCache[plr]) do obj.Visible = false end
+                    espCache[plr].Visible = false
                 end
             elseif espCache[plr] then
-                for _, obj in pairs(espCache[plr]) do obj.Visible = false end
+                espCache[plr].Visible = false
             end
         end
     end
 
-    if Settings.LowGravity then
-        workspace.Gravity = 50
-    else
-        workspace.Gravity = 196.2
-    end
+    workspace.Gravity = Settings.LowGravity and 50 or 196.2
 end)
 
-print("✅ Gunfight Arena Script loaded with GUI toggles!")
+print("✅ Gunfight Arena Script UI loaded")
