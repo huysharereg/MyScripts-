@@ -25,7 +25,7 @@ local Settings = {
     Fly = false
 }
 
--- UI Setup (giữ nguyên như cũ)
+-- UI Setup
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 ScreenGui.Name = "GunfightArenaUI"
 local Frame = Instance.new("Frame", ScreenGui)
@@ -129,11 +129,11 @@ createToggle("Draw Team", 250, "DrawTeam")
 createToggle("Low Gravity", 285, "LowGravity")
 createToggle("Fly", 320, "Fly")
 
--- Get closest enemy
+-- ✅ Get closest enemy only
 local function GetClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and (Settings.DrawTeam == false and p.Team ~= LocalPlayer.Team) then
+        if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team then
             if p.Character and p.Character:FindFirstChild(Settings.AimbotTarget) then
                 local pos, visible = Camera:WorldToViewportPoint(p.Character[Settings.AimbotTarget].Position)
                 if visible then
@@ -148,7 +148,6 @@ local function GetClosestEnemy()
     return closest
 end
 
--- Aimbot Logic
 RunService.RenderStepped:Connect(function()
     if Settings.Fly then
         LocalPlayer.Character:FindFirstChildOfClass("Humanoid").PlatformStand = true
