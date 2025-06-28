@@ -78,17 +78,23 @@ Circle.Radius = Settings.AimbotFOV
 
 local espCache = {}
 
+local function isEnemy(plr)
+    return plr:GetAttribute("Team") ~= LocalPlayer:GetAttribute("Team")
+end
+
 local function getClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
-            local part = plr.Character[Settings.AimbotTarget]
-            local pos, visible = Camera:WorldToViewportPoint(part.Position)
-            if visible or not Settings.AimbotVisibility then
-                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-                if dist < shortest and dist < Settings.AimbotFOV then
-                    shortest = dist
-                    closest = plr
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
+            if isEnemy(plr) then
+                local part = plr.Character[Settings.AimbotTarget]
+                local pos, visible = Camera:WorldToViewportPoint(part.Position)
+                if visible or not Settings.AimbotVisibility then
+                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                    if dist < shortest and dist < Settings.AimbotFOV then
+                        shortest = dist
+                        closest = plr
+                    end
                 end
             end
         end
@@ -120,8 +126,8 @@ RunService.RenderStepped:Connect(function()
     -- ESP
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local isEnemy = (plr.Team ~= LocalPlayer.Team)
-            if (Settings.PlayerESP and isEnemy) or (Settings.DrawTeam and not isEnemy) then
+            local enemy = isEnemy(plr)
+            if (Settings.PlayerESP and enemy) or (Settings.DrawTeam and not enemy) then
                 if not espCache[plr] then
                     espCache[plr] = {
                         Name = Drawing.new("Text"),
