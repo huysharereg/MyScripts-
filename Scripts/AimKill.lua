@@ -78,23 +78,17 @@ Circle.Radius = Settings.AimbotFOV
 
 local espCache = {}
 
-local function isEnemy(plr)
-    return plr:GetAttribute("Team") ~= LocalPlayer:GetAttribute("Team")
-end
-
 local function getClosestEnemy()
     local closest, shortest = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
-            if isEnemy(plr) then
-                local part = plr.Character[Settings.AimbotTarget]
-                local pos, visible = Camera:WorldToViewportPoint(part.Position)
-                if visible or not Settings.AimbotVisibility then
-                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-                    if dist < shortest and dist < Settings.AimbotFOV then
-                        shortest = dist
-                        closest = plr
-                    end
+        if plr ~= LocalPlayer and (Settings.DrawTeam or plr.Team ~= LocalPlayer.Team) and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) then
+            local part = plr.Character[Settings.AimbotTarget]
+            local pos, visible = Camera:WorldToViewportPoint(part.Position)
+            if visible or not Settings.AimbotVisibility then
+                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                if dist < shortest and dist < Settings.AimbotFOV then
+                    shortest = dist
+                    closest = plr
                 end
             end
         end
@@ -112,7 +106,8 @@ RunService.RenderStepped:Connect(function()
     if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
         local target = getClosestEnemy()
         if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
-            local aimPos = target.Character[Settings.AimbotTarget].Position
+            local aimPart = target.Character[Settings.AimbotTarget]
+            local aimPos = aimPart.Position
             if Settings.AimbotPrediction then
                 local velocity = target.Character:FindFirstChild("HumanoidRootPart") and target.Character.HumanoidRootPart.Velocity or Vector3.new()
                 aimPos = aimPos + velocity * 0.1
@@ -126,8 +121,8 @@ RunService.RenderStepped:Connect(function()
     -- ESP
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local enemy = isEnemy(plr)
-            if (Settings.PlayerESP and enemy) or (Settings.DrawTeam and not enemy) then
+            local isEnemy = (plr.Team ~= LocalPlayer.Team)
+            if (Settings.PlayerESP and isEnemy) or (Settings.DrawTeam and not isEnemy) then
                 if not espCache[plr] then
                     espCache[plr] = {
                         Name = Drawing.new("Text"),
@@ -145,7 +140,7 @@ RunService.RenderStepped:Connect(function()
                 local head = plr.Character.Head
                 local root = plr.Character.HumanoidRootPart
                 local pos, visible = Camera:WorldToViewportPoint(head.Position)
-                if visible and Settings.ESP then
+                if visible and Settings.PlayerESP then
                     espCache[plr].Name.Text = plr.Name
                     espCache[plr].Name.Position = Vector2.new(pos.X, pos.Y - 15)
                     espCache[plr].Name.Visible = Settings.DrawNames
@@ -170,7 +165,7 @@ RunService.RenderStepped:Connect(function()
     workspace.Gravity = Settings.LowGravity and 50 or 196.2
 
     -- Fly
-    if Settings.Fly then
+    if Settings.Fly and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 50, 0)
     end
 end)
