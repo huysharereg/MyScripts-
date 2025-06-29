@@ -1,36 +1,69 @@
--- ⚙️ SETTINGS
-local Settings = {
-    AimbotEnabled = false,
-    ESPEnabled = false,
-    FOVVisible = false,
-    AimbotSpeed = 5,
-    ShowTeam = false,
-    AimbotTarget = "Head",
-    UseChams = false,
-    FlyEnabled = false,
-    LowGravity = false
-}
+-- 🚫 Anti-Ban cơ bản (ẩn khỏi lệnh kick, log)
+for _, conn in pairs(getconnections or function() return {} end(game.DescendantAdded)) do
+    pcall(function()
+        if typeof(conn) == "table" and conn.Function and tostring(conn.Function):lower():find("kick") then
+            conn:Disable()
+        end
+    end)
+end
 
--- 📦 SERVICES
+-- Ẩn khỏi hàm Local Kick, Disconnect
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local old = mt.__namecall
+
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if tostring(method):lower():find("kick") then
+        return
+    end
+    return old(self, ...)
+end)
+setreadonly(mt, true)
+
+-- 📦 Dịch vụ
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local StarterGravity = workspace.Gravity
 
--- 🎯 GET CLOSEST ENEMY
+-- ⚙️ Cài đặt
+local Settings = {
+    AimbotEnabled = false,
+    AimbotAlways = false,
+    AimbotFOV = 120,
+    AimbotPart = "Head",
+    AimbotSpeed = 6,
+    AimbotPrediction = true,
+    ShowTeam = false,
+    ESPEnabled = false,
+    FOVVisible = true
+}
+
+-- 🎯 Tìm địch gần nhất
+local function IsVisible(part)
+    local origin = Camera.CFrame.Position
+    local direction = (part.Position - origin)
+    local ray = Ray.new(origin, direction)
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character}, false, true)
+    return hit and hit:IsDescendantOf(part.Parent)
+end
+
 local function GetClosestEnemy()
     local closest, shortest = nil, math.huge
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild(Settings.AimbotTarget) and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
-            if not Settings.ShowTeam and plr.Team == LocalPlayer.Team then continue end
-            local pos, onScreen = Camera:WorldToViewportPoint(plr.Character[Settings.AimbotTarget].Position)
-            if onScreen then
-                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-                if dist < shortest and dist <= 120 then
-                    closest = plr.Character[Settings.AimbotTarget]
-                    shortest = dist
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if not Settings.ShowTeam and p.Team == LocalPlayer.Team then continue end
+            local part = p.Character:FindFirstChild(Settings.AimbotPart)
+            if part then
+                local pos, vis = Camera:WorldToViewportPoint(part.Position)
+                if vis and IsVisible(part) then -- 💡 Chỉ khi có Line of Sight
+                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                    if dist < shortest and dist <= Settings.AimbotFOV then
+                        closest = part
+                        shortest = dist
+                    end
                 end
             end
         end
@@ -38,161 +71,114 @@ local function GetClosestEnemy()
     return closest
 end
 
--- 🎯 AIMBOT
+-- 🔁 Aimbot logic (chuột trái)
 RunService.RenderStepped:Connect(function()
-    if Settings.LowGravity then
-        workspace.Gravity = 20
-    else
-        workspace.Gravity = StarterGravity
-    end
+    if not Settings.AimbotEnabled then return end
+    if not Settings.AimbotAlways and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
-    if Settings.FlyEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        if UIS:IsKeyDown(Enum.KeyCode.Space) then
-            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 50, 0)
+    local target = GetClosestEnemy()
+    if target then
+        local predicted = target.Position
+        local root = target.Parent:FindFirstChild("HumanoidRootPart")
+        if Settings.AimbotPrediction and root then
+            predicted = predicted + root.Velocity * 0.035
         end
-    end
-
-    if Settings.AimbotEnabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-        local target = GetClosestEnemy()
-        if target then
-            local dir = (target.Position - Camera.CFrame.Position).Unit
-            local goal = CFrame.lookAt(Camera.CFrame.Position, Camera.CFrame.Position + dir)
-            Camera.CFrame = Camera.CFrame:Lerp(goal, 1 / Settings.AimbotSpeed)
-        end
+        local pos = Camera.CFrame.Position
+        local dir = (predicted - pos).Unit
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.lookAt(pos, pos + dir), 1 / Settings.AimbotSpeed)
     end
 end)
 
--- 🔵 FOV CIRCLE
-local fovCircle = Drawing.new("Circle")
-fovCircle.Color = Color3.fromRGB(255, 255, 0)
-fovCircle.Thickness = 1
-fovCircle.Radius = 120
-fovCircle.Filled = false
-fovCircle.Visible = true
+-- 🔵 FOV
+local fov = Drawing.new("Circle")
+fov.Color = Color3.fromRGB(255,255,0)
+fov.Thickness = 1
+fov.Filled = false
+fov.Visible = true
+
 RunService.RenderStepped:Connect(function()
-    fovCircle.Visible = Settings.FOVVisible
-    fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    fov.Visible = Settings.FOVVisible
+    fov.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    fov.Radius = Settings.AimbotFOV
 end)
 
--- 👁️ ESP (TEXT)
+-- 🔥 Chams (ESP xuyên tường)
 local esp = {}
 RunService.RenderStepped:Connect(function()
     for _, v in pairs(esp) do v.Visible = false end
     if not Settings.ESPEnabled then return end
 
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-            if not Settings.ShowTeam and plr.Team == LocalPlayer.Team then continue end
-            local pos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
-            if onScreen then
-                if not esp[plr] then
-                    local text = Drawing.new("Text")
-                    text.Size = 14
-                    text.Center = true
-                    text.Outline = true
-                    text.Color = Color3.fromRGB(255, 255, 255)
-                    esp[plr] = text
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+            if not Settings.ShowTeam and p.Team == LocalPlayer.Team then continue end
+            local head = p.Character.Head
+            local pos, vis = Camera:WorldToViewportPoint(head.Position)
+            if vis then
+                if not esp[p] then
+                    local box = Drawing.new("Text")
+                    box.Size = 14
+                    box.Center = true
+                    box.Outline = true
+                    box.Color = Color3.fromRGB(255, 0, 0) -- Đỏ = địch
+                    esp[p] = box
                 end
-                esp[plr].Text = plr.Name
-                esp[plr].Position = Vector2.new(pos.X, pos.Y - 25)
-                esp[plr].Visible = true
+                esp[p].Text = "[CHAMS] " .. p.Name
+                esp[p].Position = Vector2.new(pos.X, pos.Y - 25)
+                esp[p].Visible = true
             end
         end
     end
 end)
 
--- 🔲 CHAMS ESP (Box xuyên tường)
-RunService.RenderStepped:Connect(function()
-    if not Settings.UseChams then return end
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-            if not Settings.ShowTeam and plr.Team == LocalPlayer.Team then continue end
-            if not plr.Character:FindFirstChild("ESPBox") then
-                local box = Instance.new("BoxHandleAdornment")
-                box.Name = "ESPBox"
-                box.Adornee = plr.Character
-                box.Size = Vector3.new(4, 6, 2)
-                box.AlwaysOnTop = true
-                box.ZIndex = 10
-                box.Color3 = Color3.fromRGB(255, 0, 0)
-                box.Transparency = 0.5
-                box.Parent = plr.Character
-            end
-        end
-    end
-end)
-
--- 🖥️ UI WITH MINIMIZE
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 250, 0, 350)
+-- 🖥️ UI đơn giản
+local Gui = Instance.new("ScreenGui", game.CoreGui)
+local Frame = Instance.new("Frame", Gui)
+Frame.Size = UDim2.new(0, 240, 0, 260)
 Frame.Position = UDim2.new(0, 20, 0.3, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BackgroundColor3 = Color3.new(0.15,0.15,0.15)
 Frame.Active = true
 Frame.Draggable = true
 
-local minimized = false
-local MinBtn = Instance.new("TextButton", Frame)
-MinBtn.Size = UDim2.new(0, 250, 0, 25)
-MinBtn.Position = UDim2.new(0, 0, 0, 0)
-MinBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-MinBtn.Text = "☰ Gunfight Arena Script"
-MinBtn.TextColor3 = Color3.fromRGB(255,255,255)
-MinBtn.TextSize = 16
-MinBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    for _, v in pairs(Frame:GetChildren()) do
-        if v:IsA("TextButton") or v:IsA("TextLabel") or v:IsA("TextBox") then
-            if v ~= MinBtn then v.Visible = not minimized end
-        end
-    end
-    Frame.Size = minimized and UDim2.new(0, 250, 0, 25) or UDim2.new(0, 250, 0, 350)
-end)
-
-local y = 30
-local function AddToggle(text, key)
+local function AddToggle(y, name, key)
     local btn = Instance.new("TextButton", Frame)
-    btn.Size = UDim2.new(0, 230, 0, 25)
     btn.Position = UDim2.new(0, 10, 0, y)
-    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.Size = UDim2.new(0, 220, 0, 30)
+    btn.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
     btn.TextColor3 = Color3.new(1,1,1)
-    btn.Text = text .. ": OFF"
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 16
+    btn.Text = name .. ": OFF"
     btn.MouseButton1Click:Connect(function()
         Settings[key] = not Settings[key]
-        btn.Text = text .. ": " .. (Settings[key] and "ON" or "OFF")
+        btn.Text = name .. ": " .. (Settings[key] and "ON" or "OFF")
     end)
-    y = y + 30
 end
 
-local function AddTextBox(text, key)
-    local label = Instance.new("TextLabel", Frame)
-    label.Text = text .. ":"
-    label.Position = UDim2.new(0, 10, 0, y)
-    label.Size = UDim2.new(0, 230, 0, 20)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.new(1,1,1)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    y = y + 20
+local function AddInput(y, label, key)
+    local textLabel = Instance.new("TextLabel", Frame)
+    textLabel.Position = UDim2.new(0, 10, 0, y)
+    textLabel.Size = UDim2.new(0, 220, 0, 20)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = Color3.new(1,1,1)
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Text = label .. ":"
 
     local box = Instance.new("TextBox", Frame)
-    box.Position = UDim2.new(0, 10, 0, y)
-    box.Size = UDim2.new(0, 230, 0, 25)
-    box.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    box.Position = UDim2.new(0, 10, 0, y + 20)
+    box.Size = UDim2.new(0, 220, 0, 25)
+    box.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
     box.TextColor3 = Color3.new(1,1,1)
     box.Text = tostring(Settings[key])
     box.FocusLost:Connect(function()
         local num = tonumber(box.Text)
         if num then Settings[key] = num end
     end)
-    y = y + 30
 end
 
--- 🌟 Add all toggles/inputs
-AddToggle("Aimbot", "AimbotEnabled")
-AddToggle("ESP Text", "ESPEnabled")
-AddToggle("ESP Chams", "UseChams")
-AddToggle("Show FOV", "FOVVisible")
-AddToggle("Show Team", "ShowTeam")
-AddToggle("Low Gravity", "LowGravity")
-AddToggle("Fly Mode", "FlyEnabled")
-AddTextBox("Aimbot Speed", "AimbotSpeed")
+AddToggle(10, "Aimbot", "AimbotEnabled")
+AddToggle(45, "Aimbot Always", "AimbotAlways")
+AddToggle(80, "Aimbot Prediction", "AimbotPrediction")
+AddInput(115, "Aimbot Speed", "AimbotSpeed")
+AddToggle(150, "ESP (Chams)", "ESPEnabled")
+AddToggle(185, "Show Team", "ShowTeam")
+AddToggle(220, "FOV Circle", "FOVVisible")
