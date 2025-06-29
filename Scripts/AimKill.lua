@@ -33,17 +33,19 @@ local function GetClosestEnemy()
     return closest
 end
 
--- 🔁 Aimbot logic
+-- 🔁 Aimbot logic chuẩn ghim Head
 RunService.RenderStepped:Connect(function()
     if Settings.AimbotEnabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
         local target = GetClosestEnemy()
         if target then
-            local dir = (target.Position - Camera.CFrame.Position).Unit
+            local headPos = target.Position + Vector3.new(0, 0.2, 0)
+            local dir = (headPos - Camera.CFrame.Position).Unit
             local goal = CFrame.lookAt(Camera.CFrame.Position, Camera.CFrame.Position + dir)
             Camera.CFrame = Camera.CFrame:Lerp(goal, 1 / Settings.AimbotSpeed)
         end
     end
 end)
+
 
 -- 🔵 FOV Circle
 local fovCircle = Drawing.new("Circle")
