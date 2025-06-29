@@ -4,7 +4,9 @@ local Settings = {
     ESPEnabled = false,
     FOVVisible = false,
     AimbotSpeed = 5,
-    ShowTeam = false
+    ShowTeam = false,
+    ShowDistance = true,
+    HighlightESP = true
 }
 
 -- 📦 Services
@@ -13,6 +15,29 @@ local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+
+-- 🛡️ Anti-Ban & Anti-Cheat Bypass
+pcall(function()
+    for _,v in pairs(getconnections(game.DescendantAdded)) do
+        if typeof(v) == "table" and v.Function and islclosure(v.Function) then
+            v:Disable()
+        end
+    end
+end)
+
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local old = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if method == "FireServer" or method == "InvokeServer" then
+        if tostring(self):lower():find("report") or tostring(self):lower():find("ban") then
+            return nil
+        end
+    end
+    return old(self, ...)
+end)
+setreadonly(mt, true)
 
 -- 🎯 Aimbot
 local function GetClosestEnemy()
@@ -33,19 +58,18 @@ local function GetClosestEnemy()
     return closest
 end
 
--- 🔁 Aimbot logic chuẩn ghim Head
+-- 🔁 Aimbot logic
 RunService.RenderStepped:Connect(function()
     if Settings.AimbotEnabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
         local target = GetClosestEnemy()
         if target then
-            local headPos = target.Position + Vector3.new(0, 0.2, 0)
+            local headPos = target.Position + Vector3.new(0, 0.15, 0)
             local dir = (headPos - Camera.CFrame.Position).Unit
             local goal = CFrame.lookAt(Camera.CFrame.Position, Camera.CFrame.Position + dir)
             Camera.CFrame = Camera.CFrame:Lerp(goal, 1 / Settings.AimbotSpeed)
         end
     end
 end)
-
 
 -- 🔵 FOV Circle
 local fovCircle = Drawing.new("Circle")
@@ -63,34 +87,51 @@ end)
 -- 👁️ ESP
 local esp = {}
 RunService.RenderStepped:Connect(function()
-    for _, v in pairs(esp) do v.Visible = false end
+    for _,v in pairs(esp) do
+        if v.Text then v.Text.Visible = false end
+        if v.Highlight then v.Highlight:Destroy() end
+    end
+    esp = {}
+
     if not Settings.ESPEnabled then return end
 
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") and plr.Character:FindFirstChild("Humanoid") then
             if not Settings.ShowTeam and plr.Team == LocalPlayer.Team then continue end
-            local pos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
+
+            local headPos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
             if onScreen then
-                if not esp[plr] then
-                    local text = Drawing.new("Text")
-                    text.Size = 14
-                    text.Center = true
-                    text.Outline = true
-                    text.Color = Color3.fromRGB(255, 255, 255)
-                    esp[plr] = text
+                -- ESP text
+                local dist = math.floor((Camera.CFrame.Position - plr.Character.Head.Position).Magnitude)
+                local tag = Drawing.new("Text")
+                tag.Text = plr.Name .. (Settings.ShowDistance and (" [" .. dist .. "m]") or "")
+                tag.Size = 14
+                tag.Center = true
+                tag.Outline = true
+                tag.Position = Vector2.new(headPos.X, headPos.Y - 25)
+                tag.Color = Color3.fromRGB(255, 255, 255)
+                tag.Visible = true
+
+                -- Highlight ESP
+                local highlight
+                if Settings.HighlightESP then
+                    highlight = Instance.new("Highlight", plr.Character)
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
                 end
-                esp[plr].Text = plr.Name
-                esp[plr].Position = Vector2.new(pos.X, pos.Y - 25)
-                esp[plr].Visible = true
+
+                esp[plr] = {Text = tag, Highlight = highlight}
             end
         end
     end
 end)
 
--- 🖥️ Simple UI
+-- 🖥️ UI
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 250, 0, 250)
+Frame.Size = UDim2.new(0, 250, 0, 280)
 Frame.Position = UDim2.new(0, 20, 0.3, 0)
 Frame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
 Frame.Active = true
@@ -134,4 +175,6 @@ AddToggle(10, "Aimbot", "AimbotEnabled")
 AddToggle(45, "ESP", "ESPEnabled")
 AddToggle(80, "Show FOV", "FOVVisible")
 AddToggle(115, "Show Team", "ShowTeam")
-AddTextBox(150, "Aimbot Speed", "AimbotSpeed")
+AddToggle(150, "Show Distance", "ShowDistance")
+AddToggle(185, "Highlight ESP", "HighlightESP")
+AddTextBox(220, "Aimbot Speed", "AimbotSpeed")
