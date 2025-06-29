@@ -1,108 +1,75 @@
--- Gunfight Arena Aimbot + ESP Script with Simple UI
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local mouse = LocalPlayer:GetMouse()
+local Mouse = LocalPlayer:GetMouse()
 
 local Settings = {
     Aimbot = false,
     AimbotAlways = false,
     AimbotSpeed = 1,
-    AimbotFOV = 150,
+    AimbotDelay = 0,
+    AimbotPrediction = true,
     AimbotTarget = "Head",
-    DrawTeam = false,
-    ESP = true,
-    ESPMode = "All"
+    ESP_Enemies = true,
+    ESP_Teammates = false
 }
 
--- UI Setup
-local gui = Instance.new("ScreenGui", game.CoreGui)
-local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 300, 0, 300)
-frame.Position = UDim2.new(0.75, 0, 0.3, 0)
-frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-frame.Active = true
-frame.Draggable = true
+-- 🧠 UI đơn giản
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "GFA_UI"
 
-local function createToggle(name, y, key)
-	local button = Instance.new("TextButton", frame)
-	button.Size = UDim2.new(0, 280, 0, 30)
-	button.Position = UDim2.new(0, 10, 0, y)
-	button.Text = name .. ": OFF"
-	button.TextColor3 = Color3.new(1,1,1)
-	button.BackgroundColor3 = Color3.fromRGB(60,60,60)
-	button.MouseButton1Click:Connect(function()
-		Settings[key] = not Settings[key]
-		button.Text = name .. ": " .. (Settings[key] and "ON" or "OFF")
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 300, 0, 350)
+Frame.Position = UDim2.new(0.7, 0, 0.3, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.Draggable = true
+Frame.Active = true
+
+local Title = Instance.new("TextLabel", Frame)
+Title.Text = "Gunfight Arena Aimbot/ESP"
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Title.TextColor3 = Color3.new(1,1,1)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+
+-- 🧩 UI Toggle Elements
+local function addToggle(name, posY, setting)
+	local toggle = Instance.new("TextButton", Frame)
+	toggle.Size = UDim2.new(1, -20, 0, 30)
+	toggle.Position = UDim2.new(0, 10, 0, posY)
+	toggle.BackgroundColor3 = Color3.fromRGB(50,50,50)
+	toggle.TextColor3 = Color3.new(1,1,1)
+	toggle.TextSize = 14
+	toggle.Font = Enum.Font.SourceSansBold
+	toggle.Text = name .. ": OFF"
+
+	toggle.MouseButton1Click:Connect(function()
+		Settings[setting] = not Settings[setting]
+		toggle.Text = name .. ": " .. (Settings[setting] and "ON" or "OFF")
 	end)
 end
 
-local function createTextBox(name, y, key, default)
-	local box = Instance.new("TextBox", frame)
-	box.Size = UDim2.new(0, 280, 0, 30)
-	box.Position = UDim2.new(0, 10, 0, y)
-	box.Text = default
-	box.TextColor3 = Color3.new(1,1,1)
-	box.BackgroundColor3 = Color3.fromRGB(60,60,60)
-	box.FocusLost:Connect(function()
-		local val = tonumber(box.Text)
-		if val then
-			Settings[key] = val
-		end
-	end)
-end
+addToggle("Aimbot", 40, "Aimbot")
+addToggle("Aimbot Always", 75, "AimbotAlways")
+addToggle("ESP Enemies", 110, "ESP_Enemies")
+addToggle("ESP Teammates", 145, "ESP_Teammates")
 
-local function createDropdown(name, y, key, options)
-	local box = Instance.new("TextBox", frame)
-	box.Size = UDim2.new(0, 280, 0, 30)
-	box.Position = UDim2.new(0, 10, 0, y)
-	box.Text = name .. ": " .. Settings[key]
-	box.TextColor3 = Color3.new(1,1,1)
-	box.BackgroundColor3 = Color3.fromRGB(60,60,60)
-	box.FocusLost:Connect(function()
-		for _, opt in pairs(options) do
-			if box.Text:lower():find(opt:lower()) then
-				Settings[key] = opt
-				box.Text = name .. ": " .. opt
-			end
-		end
-	end)
-end
-
--- UI Elements
-createToggle("Aimbot", 10, "Aimbot")
-createToggle("Aimbot Always", 45, "AimbotAlways")
-createTextBox("Aimbot Speed", 80, "AimbotSpeed", tostring(Settings.AimbotSpeed))
-createTextBox("FOV", 115, "AimbotFOV", tostring(Settings.AimbotFOV))
-createDropdown("Target Part", 150, "AimbotTarget", {"Head", "HumanoidRootPart", "LeftLeg"})
-createDropdown("ESP Mode", 185, "ESPMode", {"All", "Name", "Box", "Line"})
-createToggle("Draw Team", 220, "DrawTeam")
-createToggle("ESP", 255, "ESP")
-
--- FOV Circle
-local circle = Drawing.new("Circle")
-circle.Color = Color3.fromRGB(255,255,0)
-circle.Filled = false
-circle.Thickness = 1
-circle.NumSides = 60
-circle.Visible = true
-circle.Transparency = 1
-
--- Aimbot
-local function getClosest()
+-- 🎯 Closest Enemy
+function GetClosest()
 	local closest, shortest = nil, math.huge
-	for _,plr in pairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
-			if plr.Team ~= LocalPlayer.Team or Settings.DrawTeam then
-				local part = plr.Character:FindFirstChild(Settings.AimbotTarget)
-				if part then
-					local pos, visible = Camera:WorldToViewportPoint(part.Position)
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(Settings.AimbotTarget) then
+			local sameTeam = player.Team == LocalPlayer.Team
+			if (not sameTeam) or Settings.ESP_Teammates then
+				local pos, onScreen = Camera:WorldToViewportPoint(player.Character[Settings.AimbotTarget].Position)
+				if onScreen then
 					local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
-					if visible and dist < shortest and dist <= Settings.AimbotFOV then
+					if dist < shortest then
 						shortest = dist
-						closest = part
+						closest = player
 					end
 				end
 			end
@@ -111,70 +78,67 @@ local function getClosest()
 	return closest
 end
 
--- ESP
-local drawings = {}
+-- 🧲 Aimbot (chuột phải hoặc luôn)
 RunService.RenderStepped:Connect(function()
-	-- Aimbot Circle
-	circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-	circle.Radius = Settings.AimbotFOV
-	circle.Visible = true
+	if not Settings.Aimbot then return end
+	if not (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) then return end
 
-	-- Aimbot
-	if Settings.Aimbot and (Settings.AimbotAlways or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) then
-		local target = getClosest()
-		if target then
-			local screenPos = Camera:WorldToViewportPoint(target.Position)
-			local mousePos = Vector2.new(mouse.X, mouse.Y)
-			local move = (Vector2.new(screenPos.X, screenPos.Y) - mousePos) / Settings.AimbotSpeed
-			mousemoverel(move.X, move.Y)
+	local target = GetClosest()
+	if target and target.Character and target.Character:FindFirstChild(Settings.AimbotTarget) then
+		local aimPart = target.Character[Settings.AimbotTarget]
+		local targetPos = aimPart.Position
+		if Settings.AimbotPrediction and target.Character:FindFirstChild("HumanoidRootPart") then
+			targetPos = targetPos + target.Character.HumanoidRootPart.Velocity * 0.05
 		end
-	end
 
-	-- Clear ESP
-	for _, obj in pairs(drawings) do
-		obj.Visible = false
-		obj:Remove()
+		local screen = Camera:WorldToViewportPoint(targetPos)
+		local moveVector = (Vector2.new(screen.X, screen.Y) - Vector2.new(Mouse.X, Mouse.Y)) / Settings.AimbotSpeed
+		if Settings.AimbotDelay > 0 then wait(Settings.AimbotDelay) end
+		mousemoverel(moveVector.X, moveVector.Y)
+	end
+end)
+
+-- 👁️ ESP Full Box / Line / Name
+local drawings = {}
+
+RunService.RenderStepped:Connect(function()
+	for _, d in pairs(drawings) do
+		if d.Remove then d:Remove() end
 	end
 	table.clear(drawings)
 
-	-- ESP
-	if Settings.ESP then
-		for _,plr in pairs(Players:GetPlayers()) do
-			if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-				if plr.Team ~= LocalPlayer.Team or Settings.DrawTeam then
-					local pos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
-					if onScreen then
-						if Settings.ESPMode == "All" or Settings.ESPMode == "Name" then
-							local nameTag = Drawing.new("Text")
-							nameTag.Text = plr.Name
-							nameTag.Position = Vector2.new(pos.X, pos.Y - 30)
-							nameTag.Color = Color3.fromRGB(255,255,255)
-							nameTag.Size = 14
-							nameTag.Center = true
-							nameTag.Outline = true
-							nameTag.Visible = true
-							table.insert(drawings, nameTag)
-						end
-						if Settings.ESPMode == "All" or Settings.ESPMode == "Box" then
-							local box = Drawing.new("Square")
-							box.Position = Vector2.new(pos.X - 25, pos.Y - 30)
-							box.Size = Vector2.new(50, 60)
-							box.Color = Color3.fromRGB(255,0,0)
-							box.Thickness = 1
-							box.Visible = true
-							table.insert(drawings, box)
-						end
-						if Settings.ESPMode == "All" or Settings.ESPMode == "Line" then
-							local line = Drawing.new("Line")
-							line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-							line.To = Vector2.new(pos.X, pos.Y)
-							line.Color = Color3.fromRGB(0,255,0)
-							line.Thickness = 1
-							line.Visible = true
-							table.insert(drawings, line)
-						end
-					end
-				end
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+			local sameTeam = player.Team == LocalPlayer.Team
+			if sameTeam and not Settings.ESP_Teammates then continue end
+			if not sameTeam and not Settings.ESP_Enemies then continue end
+
+			local headPos, visible = Camera:WorldToViewportPoint(player.Character.Head.Position)
+			if visible then
+				local name = Drawing.new("Text")
+				name.Text = player.Name
+				name.Position = Vector2.new(headPos.X, headPos.Y - 20)
+				name.Color = sameTeam and Color3.new(0,1,0) or Color3.new(1,0,0)
+				name.Size = 14
+				name.Center = true
+				name.Outline = true
+				name.Visible = true
+				table.insert(drawings, name)
+
+				local box = Drawing.new("Square")
+				box.Size = Vector2.new(50, 60)
+				box.Position = Vector2.new(headPos.X - 25, headPos.Y - 30)
+				box.Color = sameTeam and Color3.new(0,1,0) or Color3.new(1,0,0)
+				box.Visible = true
+				box.Thickness = 2
+				table.insert(drawings, box)
+
+				local line = Drawing.new("Line")
+				line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+				line.To = Vector2.new(headPos.X, headPos.Y)
+				line.Color = sameTeam and Color3.new(0,1,0) or Color3.new(1,0,0)
+				line.Visible = true
+				table.insert(drawings, line)
 			end
 		end
 	end
